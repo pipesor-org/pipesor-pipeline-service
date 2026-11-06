@@ -4,3 +4,6 @@
 *.pem
 *.key
 .DS_Store
+
+# Maven build output
+/target/

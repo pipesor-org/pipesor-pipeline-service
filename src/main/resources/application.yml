@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: pipesor-pipeline-service
+
+server:
+  address: 127.0.0.1
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false

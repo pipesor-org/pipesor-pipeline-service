@@ -2,7 +2,7 @@
 
 **Status: readiness record; not approved for IaC consumption or deployment.** Prepared for PD-035. [Architecture consumption](architecture.md) records the consulted source revision `c84ef3e4629fcb0c38315f32b641a5fb949e450d`, model IDs, applicable ADRs and committed PD-033–036. ADR-019 governs the current MVP alignment.
 
-**Documented fact** means recorded in those sources/policies, not proven implementation or independent approval evidence. **Proposal** requires acceptance; **Unknown** remains pending. No application images, endpoints, credentials or migrations are implemented in this service increment. IaC contains infrastructure preparation; provisioning is not evidenced here.
+**Documented fact** means recorded in those sources/policies, not proven implementation or independent approval evidence. **Proposal** requires acceptance; **Unknown** remains pending. The local bootstrap implements application startup and opt-in OpenAPI/Swagger UI; no business endpoints, application images, credentials or migrations are implemented. IaC contains infrastructure preparation; provisioning is not evidenced here.
 
 ## Identity and runtime
 
@@ -16,7 +16,7 @@
 
 User direction recorded on 2026-11-06 retains the installed Java 25.0.4.1, Python 3.14.8, Docker 29.9.3 and Git 2.55.0. Java services use Maven (installed: 3.10.0); Azure CLI 2.92.0 is available for separately authorized operations. Select the latest stable dependency versions compatible with that baseline, and pin them when application build/dependency files are introduced. Framework and transitive dependency compatibility must be checked together; availability on this workstation is not container/CI verification. Python dependencies belong in isolated project environments.
 
-This session direction supplements the consulted architecture revision; it does not close PD-032's identity/hash choices or PD-035's base-image and delivery requirements. No application build files are introduced by this documentation update.
+This session direction supplements the consulted architecture revision; it does not close PD-032's identity/hash choices or PD-035's base-image and delivery requirements. The [first controlled increment](implementation-bootstrap.md) introduces a Maven project targeting Java 25, Spring Boot 4.1.2, springdoc 3.2.0 and Maven Wrapper 3.10.0. Its local build and HTTP startup checks passed; container/CI and Azure compatibility remain unverified.
 
 ## Integrated infrastructure baseline
 
@@ -49,6 +49,8 @@ Documented fact: Documented Service Bus subscription delivery and REST/HTTPS que
 | Liveness/readiness/startup probes | Paths, protocol, port, criteria and timings unknown, PD-035. No health endpoint is selected or implemented. |
 | Startup | Initialization order, dependency retries, startup budget and migration coordination unknown, PD-035. |
 | Shutdown | Graceful termination/drain behavior, time budget and in-flight work handling unknown, PD-035; broker consumers also depend on PD-033 re-delivery agreement. |
+
+Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabled by default and enabled by the `local` profile. Verification used a random port (`server.port=0`). These local settings do not resolve the pending ACA port/bind/probe/authorization contract above. No database or broker connection is configured.
 
 ## Configuration and secrets
 
