@@ -1,6 +1,15 @@
 spring:
   application:
     name: pipesor-pipeline-service
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    enabled: false
+    default-schema: ops
+    schemas: ops
+    table: pipeline_flyway_schema_history
 
 server:
   address: 127.0.0.1

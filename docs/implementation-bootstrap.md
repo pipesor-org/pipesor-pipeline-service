@@ -38,3 +38,7 @@ JPA, Flyway, naming, UUID/audit bases and handlers will be introduced with their
 ## Branch and review dependency
 
 Implementation is isolated on the short-lived local branch feature/pipeline-bootstrap, based on documentation candidate 978151358d79407df46823b6f5d14e5c2041fc23. The documentation remains pending in [Pipeline PR #3](https://github.com/pipesor-org/pipesor-pipeline-service/pull/3), which depends on [shared conventions PR #6](https://github.com/pipesor-org/pipesor-docs/pull/6), candidate 5f1e3c16cbde3402ffec73eab412b1d2368ae4be. These commits are not approved or merged baselines. This dependent local branch avoids mixing executable code into the documentation review; after those approvals/merges, reconcile it with main before opening the implementation PR. No implementation push or deployment accompanies this separation.
+
+## Subsequent integration status
+
+Before increment 2, documentation PRs #3 and #6 were confirmed merged. Pipeline main is a447cf36e63dd6eadf087af5632970a0394873e6; shared conventions main is d44b45b8b14ef97e464327ec351e62da70208da6. The unpublished bootstrap commit was rebased onto Pipeline main (now a91bf34). Earlier pending-PR statements above describe the historical first-increment handoff. Current setup and database requirements are documented by the [repository lookup increment](implementation-catalog-query.md) and README.

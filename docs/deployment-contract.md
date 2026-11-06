@@ -2,7 +2,7 @@
 
 **Status: readiness record; not approved for IaC consumption or deployment.** Prepared for PD-035. [Architecture consumption](architecture.md) records the consulted source revision `c84ef3e4629fcb0c38315f32b641a5fb949e450d`, model IDs, applicable ADRs and committed PD-033–036. ADR-019 governs the current MVP alignment.
 
-**Documented fact** means recorded in those sources/policies, not proven implementation or independent approval evidence. **Proposal** requires acceptance; **Unknown** remains pending. The local bootstrap implements application startup and opt-in OpenAPI/Swagger UI; no business endpoints, application images, credentials or migrations are implemented. IaC contains infrastructure preparation; provisioning is not evidenced here.
+**Documented fact** means recorded in those sources/policies, not proven implementation or independent approval evidence. **Proposal** requires acceptance; **Unknown** remains pending. The local implementation includes application startup, opt-in OpenAPI/Swagger UI, an internal repository lookup and Flyway V1 for ops.repositories. No public business endpoints, deployable container images or environment credentials are supplied. IaC contains infrastructure preparation; provisioning is not evidenced here.
 
 ## Identity and runtime
 
@@ -50,7 +50,7 @@ Documented fact: Documented Service Bus subscription delivery and REST/HTTPS que
 | Startup | Initialization order, dependency retries, startup budget and migration coordination unknown, PD-035. |
 | Shutdown | Graceful termination/drain behavior, time budget and in-flight work handling unknown, PD-035; broker consumers also depend on PD-033 re-delivery agreement. |
 
-Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabled by default and enabled by the `local` profile. Verification used a random port (`server.port=0`). These local settings do not resolve the pending ACA port/bind/probe/authorization contract above. No database or broker connection is configured.
+Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabled by default and enabled by the `local` profile. Verification used a random port (`server.port=0`). These local settings do not resolve the pending ACA port/bind/probe/authorization contract above. Database targets and credentials must now be supplied externally through Spring datasource configuration. PostgreSQL-backed tests use disposable containers; the local profile enables Flyway, while the default disables migration execution and requires an existing schema for Hibernate validation. No broker connection is configured.
 
 ## Configuration and secrets
 
@@ -60,7 +60,7 @@ Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabl
 | Secret/authentication requirements | Service Bus and PostgreSQL use the integrated Entra-only foundation with system-assigned identity for the future app. Token acquisition/refresh, scoped grants, suppliers and service caller validation remain pending PD-007/027/034/035. | Unknown except explicitly documented mechanisms; PD-027/035. Secret storage is intentionally undecided. |
 | Delivery of values | Proposed: backend maintainers define/validate the required configuration interface; the authorized environment/integration owners supply approved values through the agreed IaC handoff. | Proposal, PD-035; specific people/teams, rotation and distribution mechanism remain unknown. |
 
-No application environment-variable names, credentials, secret store or runtime defaults are approved by this document. The system-assigned ACA identity lifecycle is selected in IaC; its creation, access grants and user/workflow authentication remain separate requirements.
+No Azure application environment-variable contract, credentials, secret store or runtime defaults are approved by this document; the local datasource inputs are scoped to the local persistence increment below. The system-assigned ACA identity lifecycle is selected in IaC; its creation, access grants and user/workflow authentication remain separate requirements.
 
 ## Access and integration
 
@@ -83,6 +83,12 @@ One physical PostgreSQL instance is shared; queries and commands use logical CQR
 **Documented facts:** logical references must be validated through existing contracts (PD-031). Logs, diagnoses and evidence have the documented 365-day retention policy (ADR-013/016/018, INV-009, domain RET-001); do not extend that duration to corpus, configuration or audit. Policy evidence and purge mechanisms remain PD-017/030.
 
 **Unknown (PD-033/034/035):** accepted message/API/schema compatibility rules, supported producer/consumer version skew, migration rollout sequencing and validation evidence. No proposed DTO, class design or embedding dimension is treated as an approved contract. For knowledge storage, vector dimension and corpus updates remain PD-005/006; no migration can assume either.
+
+## Local persistence increment
+
+The [repository lookup increment](implementation-catalog-query.md) maps only the existing ops.repositories fields: UUID identity, external GitHub text ID, full name, nullable default branch and creation time. V1 creates this table; Flyway manages service-specific metadata in ops.pipeline_flyway_schema_history. Standard Hibernate snake_case naming is exercised against PostgreSQL, and ddl-auto=validate prevents ORM schema mutation. No updated_at, inferred access-grant table or write/registration API is introduced.
+
+Local/test Flyway execution may initialize ops in its disposable database. These local choices do not approve creation of a cloud schema, grants, an Azure migration runner or runtime DDL permissions. Default startup leaves Flyway disabled. The README's standard SPRING_DATASOURCE_URL/USERNAME/PASSWORD inputs are local setup examples; production PostgreSQL remains subject to the documented Entra-only foundation and pending token/access/configuration contracts. Do not reuse synthetic test credentials or the local profile as an Azure deployment contract.
 
 ## Operations
 
