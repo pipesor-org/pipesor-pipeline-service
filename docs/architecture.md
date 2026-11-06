@@ -68,3 +68,27 @@ Missing source approvals/provenance are tracked in PD-012–024, including indiv
 ## GitHub enforcement limitation
 
 The baseline audit confirmed private visibility, `main` as default branch and squash-only merge settings. The GitHub rulesets API returned HTTP 403 with a plan-upgrade requirement for this service; no enforced branch protection or independent approval gate is certified. PR-title/body squash formatting and automatic branch deletion were historical initialization settings, not independently revalidated by this audit. Mandatory reviewed PRs and no direct pushes to main remain contribution rules; server-side enforcement has not been established. Keep these repositories private; do not change visibility to work around that limitation. No empty CI checks or deployment workflows are added.
+
+## First implementation agreement
+
+Session-authorized on 2026-11-06; revisable development conventions, not evidence of implementation or contract approval. Follow the [common backend conventions](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/backend-conventions.md) and [Java/Spring conventions](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/java-spring-conventions.md). The source baseline above remains historical; these local changes must not be described as integrated into main before merge.
+
+One Maven project with wrapper, organized by functionality:
+
+| Package | Responsibility |
+|---|---|
+| catalog | GitHub repositories and monitored workflows. |
+| execution | Executions, attempts and stages. |
+| incident | Incidents and origin/verification execution links. |
+| shared | Minimal locally reused domain and persistence base classes. |
+| configuration | Technical configuration and dependency composition. |
+
+Within each functionality use domain/model (aggregates, entities, valueobjects, commands, queries), domain/services, application/commandhandlers, application/queryhandlers, application/ports, interfaces/rest (resources, transform), interfaces/messaging (transform), and infrastructure/persistence/jpa as needed. These packages do not establish aggregate boundaries or new bounded contexts. REST belongs inside interfaces. Domain contracts are framework-free records; handlers implement use cases and transformers translate representations without owning business rules.
+
+Use Spring Data JPA/Hibernate with separate persistence models, explicit ops table names and standard snake_case naming, Flyway SQL migrations, and Hibernate schema validation. Use UUID identity, Instant times and minimal separate domain/JPA bases. Document REST with springdoc-openapi. Exact dependencies remain subject to compatibility verification and pinning when the Maven project is introduced.
+
+The current persistent model has created_at but no updated_at. Before implementing mutable timestamp bases or migrations containing updated_at, update the applicable source-model tables and domain decision, then regenerate and validate affected derivatives. Do not add it implicitly or to append-only records. Functional audit remains distinct and its write mechanics unresolved.
+
+Service Bus provides the asynchronous input. Handlers alone do not imply thread dispatch or deferred REST execution; queries return directly by default. Settle message delivery, commit coordination, duplicates, concurrency and ordering under PD-033 before integration. Keep the documented incident plus failed ORIGIN invariant atomic; preserve all domain constraints in application and persistence.
+
+Implement small complete increments with acceptance criteria, relevant failure tests and current README commands. First establish the build, local startup and test tooling, then implement a use case whose required semantics are agreed. No empty package scaffolding, generic bus, shared library or cloud deployment is required by this agreement. PD-003/007/008/031/033/034/035 remain scoped prerequisites for the increments that use them.

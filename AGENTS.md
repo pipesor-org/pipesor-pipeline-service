@@ -2,6 +2,7 @@
 
 ## Context by task
 
+- Before implementation, read the [common backend conventions](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/backend-conventions.md) and [Java/Spring conventions](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/java-spring-conventions.md). Use the accessible pipesor-docs checkout when available, distinguishing local changes from integrated main. Apply only the conventions relevant to this service; they do not add tables, integrations or permissions.
 - Use [README.md](README.md#development-and-verification) for setup, runnable commands and contribution policies. Add verified commands there when introducing the application tooling; reference them rather than maintaining a second command list here.
 - For execution/incident behavior, event consumption, API or persistence changes, consult [architecture](docs/architecture.md#pipeline-implementation-context) and the applicable current sources it identifies. Follow links for the affected subject, not the entire documentation set for every edit.
 - For dependency selection, runtime configuration, migrations or delivery work, consult the relevant sections of the [deployment contract](docs/deployment-contract.md). Its development baseline records the authorized version-selection policy.

@@ -8,6 +8,7 @@ This repository currently contains documentation and optional Codex configuratio
 
 - [Documentation baseline](docs/documentation-baseline.md): audited source revisions, evidence limits and adoption after merge.
 
+- [First implementation agreement](docs/architecture.md#first-implementation-agreement): package structure, handlers, persistence, identity, audit metadata and OpenAPI conventions.
 - [Architecture](docs/architecture.md): service boundaries, integration context and current sources in `pipesor-docs`.
 - [Deployment contract](docs/deployment-contract.md): development baseline, delivery requirements and unresolved contracts.
 - [AGENTS.md](AGENTS.md): repository instructions for coding agents.
