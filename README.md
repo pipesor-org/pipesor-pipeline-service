@@ -19,7 +19,7 @@ The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 an
 
 The [development baseline](docs/deployment-contract.md#development-baseline) records the toolchain policy. Run commands from this repository root with JDK 25. Tests now require a working Docker daemon: Spring Boot/Testcontainers starts disposable PostgreSQL 17.11 instances, applies Flyway and validates JPA. First execution needs HTTPS access to Maven Central and the image registry plus writable caches. No Azure access or existing database credentials are required for tests. Missing Docker fails the integration suite.
 
-Compile, run all 13 tests and package the executable JAR:
+Compile, run the domain and integration tests and package the executable JAR:
 
 ```bash
 ./mvnw -B -ntp clean verify
@@ -51,7 +51,7 @@ Read the assigned HTTP port in the `Tomcat started on port` log entry. OpenAPI: 
 
 Stop the application with Ctrl+C. Stop the example database with `docker stop pipeline-postgres-dev`; its container and data are disposable and removed on exit. The Flyway history table is ops.pipeline_flyway_schema_history; application schema changes come from Flyway, with Hibernate ddl-auto=validate and open-in-view disabled.
 
-The [increment record](docs/implementation-catalog-query.md#verification-progress) reports current validation, including the standalone packaged-JAR check. The Windows wrapper remains untested on Windows.
+Regression checks also cover distinct metadata, PostgreSQL microsecond precision, exact identity/required-field rejection and the actual default/local startup migration contract. The [increment record](docs/implementation-catalog-query.md#verification-progress) preserves historical verification evidence. The Windows wrapper remains untested on Windows.
 
 For the current documentation foundation, check affected links and consistency with the referenced sources, then run:
 

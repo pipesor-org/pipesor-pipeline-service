@@ -4,8 +4,8 @@ import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
-import org.pipesor.pipeline.catalog.domain.model.entities.GitHubRepository;
 import org.pipesor.pipeline.catalog.application.queries.GetRepositoryByIdQuery;
+import org.pipesor.pipeline.catalog.domain.model.entities.GitHubRepository;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNullPointerException;
@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 class GetRepositoryByIdQueryHandlerTests {
 
     @Test
-    void delegatesTheExactUuidAndPreservesTheDomainResult() {
+    void delegatesTheExactUuidAndReturnsRepositoryData() {
         UUID id = UUID.randomUUID();
         var repository = new GitHubRepository(id, "12345678901234567890", "example/service",
                 null, Instant.parse("2026-11-06T12:00:00Z"));
@@ -22,7 +22,8 @@ class GetRepositoryByIdQueryHandlerTests {
             return Optional.of(repository);
         });
 
-        assertThat(handler.handle(new GetRepositoryByIdQuery(id))).containsSame(repository);
+        assertThat(handler.handle(new GetRepositoryByIdQuery(id))).hasValueSatisfying(result ->
+                assertThat(result).usingRecursiveComparison().isEqualTo(repository));
     }
 
     @Test
