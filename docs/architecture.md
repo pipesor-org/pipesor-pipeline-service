@@ -108,3 +108,11 @@ RepositoryLookup is an application output port for reads. JpaRepositoryLookup im
 An entity has stable identity; an aggregate defines a consistency boundary and exposes mutations through its root. A table, foreign key or base class does not define that boundary. Document the first command's invariants and transaction scope before introducing its aggregate; an aggregate root is also an entity and needs no empty base class. Value objects must add domain meaning, validation or prevent actual identifier mixups. UUID and Instant remain suitable value types for the current read; do not add custom wrappers without a concrete requirement. Queries may return projections without loading aggregates.
 
 The shared convention refinement is published in [pipesor-docs PR #7](https://github.com/pipesor-org/pipesor-docs/pull/7), candidate 752bdcfea69c235775e9560a366d343c2bb2d959, pending review/integration. Merge that convention before the dependent implementation PR. The source revision recorded for increment 2 remains historical; a candidate commit is not a merged baseline.
+
+## Incident domain and identity rules
+
+Session-approved local domain implementation: Incident is an entity and aggregate root protecting its immutable failed ORIGIN from the same pipeline. ExecutionOutcome identifies that execution without owning a mutable execution entity. IncidentDetails, IncidentLifecycle and VerificationExecution carry domain values; equality uses UUID value equality.
+
+The root enforces OPEN → IN_REMEDIATION → VERIFICATION → RESOLVED, requires a subsequent linked successful verification plus explicit human resolution, permits return from failed verification to remediation and forbids reopening RESOLVED. Verification may reference another authorized pipeline; authorization and atomic persistence belong to the future application adapters. No diagnosis/evidence state is changed. This commit provides domain behavior only, with no public endpoints or durable incident writes.
+
+DeterministicIds applies the session-approved UUIDv5 URL-namespace names for new integrated pipelines, executions/attempts and automatic incidents. Repository/external GitHub identifiers retain their documented types. No existing UUID is rewritten. Native catalog/stage/status enums express the approved model; they add no tables or user/role store.

@@ -2,7 +2,7 @@
 
 Pipeline Service owns monitored workflows, executions, stages, states, metadata and incidents in the `ops` context. Its canonical architecture ID is `pipeline_service`; the planned runtime is Java / Spring Boot on Azure Container Apps.
 
-The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 and local OpenAPI/Swagger UI (springdoc 3.2.0). The second controlled increment adds an internal repository-by-UUID query through domain/application/JPA and a Flyway migration for ops.repositories. Public business endpoints, registration commands, broker integration, deployable container images and release automation have not been implemented.
+The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 and local OpenAPI/Swagger UI (springdoc 3.2.0). The second controlled increment adds an internal repository-by-UUID query through domain/application/JPA and a Flyway migration for ops.repositories. A framework-free Incident root now protects failed-origin and approved lifecycle invariants, with value objects for execution identity/outcome and verification. Runtime incident persistence, public business endpoints, registration, broker consumption and release automation remain unimplemented.
 
 ## Documentation
 
