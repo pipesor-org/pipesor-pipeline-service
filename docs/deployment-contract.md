@@ -50,7 +50,7 @@ Documented fact: Documented Service Bus subscription delivery and REST/HTTPS que
 | Startup | Initialization order, dependency retries, startup budget and migration coordination unknown, PD-035. |
 | Shutdown | Graceful termination/drain behavior, time budget and in-flight work handling unknown, PD-035; broker consumers also depend on PD-033 re-delivery agreement. |
 
-Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabled by default and enabled by the `local` profile. Verification used a random port (`server.port=0`). These local settings do not resolve the pending ACA port/bind/probe/authorization contract above. Database targets and credentials must now be supplied externally through Spring datasource configuration. PostgreSQL-backed tests use disposable containers; the local profile enables Flyway, while the default disables migration execution and requires an existing schema for Hibernate validation. No broker connection is configured.
+Local bootstrap settings bind HTTP to `127.0.0.1`; OpenAPI/Swagger UI are disabled by default and enabled by the `local` profile. Verification used a random port (`server.port=0`). These local settings do not resolve the pending ACA port/bind/probe/authorization contract above. Database targets and credentials must now be supplied externally through Spring datasource configuration. PostgreSQL-backed tests use disposable containers; the local profile enables Flyway, while the default disables migration execution and requires an existing schema for Hibernate validation. An opt-in Service Bus receiver is implemented with explicit namespace/topic/subscription and delivery inputs; no real target is configured or validated.
 
 ## Configuration and secrets
 
@@ -108,3 +108,9 @@ Before IaC consumes this contract, provide:
 4. The applicable independent environment promotion approvals and separate authorization for any infrastructure action. Contract approval alone does not authorize deployment.
 
 **Approval evidence today: none for this service's delivery contract.** ADRs retain their recorded Accepted status; missing individual acceptance records remain PD-014. This document is sufficient to expose gaps while repository initialization proceeds; it is insufficient to claim deployability.
+
+## Local operational persistence and receiver
+
+V2–V5 add owned operational tables, DD-002 deferred incident/origin protection and durable technical receipt/order storage. The native enums and constraints follow the consulted source model; access-grant storage retains its provisional qualification. Default startup requires these migrations applied beforehand and never evolves schema. The dev/test profile may migrate its disposable database; production runner, privileges and sequencing remain PD-035.
+
+The opt-in receiver uses managed identity and manual settlement, with explicit message-size, concurrency, renewal and drain limits. Execution/incident state and receipt commit together before acknowledgement. Existing source metadata and UUIDs are preserved; incompatible legacy identities need an explicit mapping decision. There is no exactly-once, Azure-readiness or distributed transaction claim. Human API security and shared audit provisioning remain separate requirements. No resources, permissions, secret store or release automation are added.

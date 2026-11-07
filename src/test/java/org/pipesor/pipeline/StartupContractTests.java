@@ -70,7 +70,7 @@ class StartupContractTests {
         try (var context = start("local")) {
             assertThat(context.isActive()).isTrue();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.repositories", Integer.class)).isZero();
-            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("1");
+            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("5");
         }
     }
 

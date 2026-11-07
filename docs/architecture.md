@@ -116,3 +116,55 @@ Session-approved local domain implementation: Incident is an entity and aggregat
 The root enforces OPEN → IN_REMEDIATION → VERIFICATION → RESOLVED, requires a subsequent linked successful verification plus explicit human resolution, permits return from failed verification to remediation and forbids reopening RESOLVED. Verification may reference another authorized pipeline; authorization and atomic persistence belong to the future application adapters. No diagnosis/evidence state is changed. This commit provides domain behavior only, with no public endpoints or durable incident writes.
 
 DeterministicIds applies the session-approved UUIDv5 URL-namespace names for new integrated pipelines, executions/attempts and automatic incidents. Repository/external GitHub identifiers retain their documented types. No existing UUID is rewritten. Native catalog/stage/status enums express the approved model; they add no tables or user/role store.
+
+## Contrato de evento normalizado v1 aprobado en sesion
+
+Propuesta solicitada y luego **aprobada explícitamente por el usuario en esta sesión**, junto con la estrategia UUIDv5. El consumidor local ya está implementado; su activación e integración real con los otros servicios/Azure no se han validado. Alcance: entrada de Pipeline por las relaciones existentes ingestion → Service Bus → Pipeline, conservando el topic y suscripciones documentados. La aceptación conjunta con los demás consumidores sigue PD-031/033; este borrador no crea un productor nuevo ni una publicación de salida desde Pipeline.
+
+Usar snapshots completos de una ejecución/intento, no parches. Conservar el contexto canónico pipeline, execution, commit, service, environment y correlationId. IDs externos de GitHub son texto; runAttempt es entero positivo. Las fechas son UTC RFC 3339 con zona; valores ausentes se representan con null, sin borrar campos a partir de un parche implícito.
+
+```json
+{
+  "schemaVersion": "1.0",
+  "eventId": "b8d60b32-fefa-443f-af08-26a1d449c655",
+  "eventType": "execution.snapshot",
+  "source": "github_actions",
+  "occurredAt": "2026-11-06T18:01:03Z",
+  "sourceUpdatedAt": "2026-11-06T18:01:02Z",
+  "correlationId": "ci-observation-482",
+  "pipeline": {"githubRepositoryId": "12345678901234567890", "githubWorkflowId": "43210"},
+  "execution": {
+    "githubRunId": "98765432109876543210", "runAttempt": 2,
+    "branch": "main", "status": "completed", "conclusion": "failure",
+    "startedAt": "2026-11-06T18:00:00Z", "completedAt": "2026-11-06T18:01:02Z"
+  },
+  "commit": {"sha": "0123456789abcdef0123456789abcdef01234567"},
+  "service": null,
+  "environment": null,
+  "stages": [{"stage": "TESTING", "status": "completed", "startedAt": null, "completedAt": null}],
+  "failure": {"stage": "TESTING", "summary": "Sanitized test failure", "detectedAt": "2026-11-06T18:01:02Z"}
+}
+```
+
+The producer obtains run identity/attempt/status from the [GitHub workflow-run resource](https://docs.github.com/en/rest/actions/workflow-runs); sourceUpdatedAt describes the upstream snapshot, not broker receipt time. Source timestamps can collide, so equal time alone must never choose a winner. Only supported normalized stages are accepted; raw logs, credentials, arbitrary GitHub payloads and embedded diagnoses are excluded.
+
+| Decision accepted in this session | Concrete behavior |
+|---|---|
+| Known workflow | Resolve repository/workflow to a preregistered pipeline. Unknown workflow: dead-letter with reason UNKNOWN_WORKFLOW; no implicit registration. |
+| Monitoring paused | Acknowledge without updating execution/incident state. Resuming does not implicitly replay skipped observations; replay is an explicit operational action. |
+| Failure classification | Only completed failure/timed_out creates an incident; cancelled, skipped and neutral do not. Failed snapshots require sanitized failure.stage/summary/detectedAt. Stage classification belongs to normalization, never an invented default stage. Severity remains unset pending PD-003. |
+| Duplicate delivery | Persist receipt identity and canonical payload digest transactionally. Same eventId/same digest is a no-op; same eventId/different digest is a conflict to DLQ. A new eventId describing an identical snapshot is also a no-op. |
+| Out-of-order snapshots | Persist sourceUpdatedAt plus canonical content digest per execution attempt. Older snapshots are acknowledged without replacing newer state; equal timestamp/different content is dead-lettered for review; newer snapshots may advance state but may not regress completed to nonterminal or change a terminal conclusion silently. Contradictions go to DLQ. |
+| Incident multiplicity | One automatically opened incident per failed execution attempt, protected by its deterministic incident UUID/primary key and transaction. This session-approved automatic creation policy is stricter than the integrated DD-002 multiplicity; the older trusted internal creation command still permits multiple incidents from one origin and is not a public endpoint. Human resolution remains explicit even if a later run succeeds. |
+| Settlement | Commit receipt, operational writes and automatic incident creation together, then acknowledge. Transient database/lock/transport failure abandons for bounded retry; maxDeliveryCount=10 then DLQ (the adapter also dead-letters an exhausted transient failure on delivery 10). Permanent malformed/version/conflict failures go to DLQ with safe reason metadata. No exactly-once claim or in-memory deduplication. |
+| Compatibility | Reject unsupported major versions. Additive optional fields within v1 are tolerated but ignored; required fields and business semantics cannot change silently. TTL, lock duration, concurrency and payload-size limits remain part of broker delivery configuration before activation. |
+
+**PD-031 identity rule explicitly accepted by the user in this session:** preserve owner assignment using a public deterministic UUIDv5 naming rule so independently arriving consumers can reference the same IDs without new synchronous service relationships. Use the standard URL namespace and canonical names urn:pipesor:v1:pipeline:github:{repositoryId}:{workflowId}, urn:pipesor:v1:execution:github:{repositoryId}:{runId}:{runAttempt} and urn:pipesor:v1:incident:{executionUuid}. Only owner services persist their objects; normalization/other consumers may compute logical references. Canonical decimal external IDs have no sign/leading zeroes; executionUuid uses lowercase canonical UUID form. The user approved naming and the one-automatic-incident policy; integration with other consumers and formal reconciliation of source models remain pending; existing locally created UUIDv4 incidents are not rewritten. Independently persisted references may precede the owner row; recovery/reconciliation of rejected upstream events remains a joint consumer contract, not a cross-schema FK.
+
+Local implementation: ExecutionSnapshotTransformer validates typed input, rejects duplicate JSON keys and fractional attempts, canonicalizes stage order/commit case and computes SHA-256 message/content digests without trusting producer hashes. ApplyExecutionSnapshotCommandHandler owns the delivery decisions; SQL/JPA adapters perform the atomic writes. V5 adds ops.execution_event_receipts as technical persistence for the approved durable receipt/order policy, not a new business aggregate. It stores hashes/metadata, never the payload. PostgreSQL microseconds plus a submicrosecond remainder preserve exact source-version ordering. Identical newer content advances the watermark without rewriting operational data. Existing stage identities/creation times and already known stage rows are retained; omitted stages are not deleted as historical observations.
+
+Message-ID advisory locks serialize conflicting reuse; workflow locks serialize first observations, including paused/configuration decisions; an execution-identity lock also protects simultaneous messages assigning one run to different workflows. The handler rejects any attempt to reassign a stored run to another workflow or external identity. No exactly-once or global broker-order guarantee is claimed. Source timestamps/canonical content, rather than broker arrival time, decide replacement.
+
+UUIDv4 rows remain untouched. If an existing registration or execution uses an identity incompatible with the newly accepted deterministic rule, the consumer rejects it with LEGACY_ID_MAPPING_REQUIRED; an explicit alias/migration decision is required before integrating that legacy dataset. No such production dataset was inspected or migrated. Technical receipts have no automatic purge policy; deleting them would weaken durable deduplication/order protection.
+
+ServiceBusConfiguration is disabled unless pipeline.messaging.enabled=true. When explicitly configured, it uses system-assigned managed identity, a topic subscription, manual settlement, no prefetch, explicit concurrency/renewal/drain limits and safe error reasons without payload logging. Local tests replace only SDK message contexts; no Azure namespace or consumer was contacted. Topic/subscription values, scoped grants, delivery/entity settings and target authorization are still required for activation. This local approval record does not silently close the integrated PD-031/033 registers or update other consumers.

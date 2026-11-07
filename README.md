@@ -2,7 +2,7 @@
 
 Pipeline Service owns monitored workflows, executions, stages, states, metadata and incidents in the `ops` context. Its canonical architecture ID is `pipeline_service`; the planned runtime is Java / Spring Boot on Azure Container Apps.
 
-The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 and local OpenAPI/Swagger UI (springdoc 3.2.0). The second controlled increment adds an internal repository-by-UUID query through domain/application/JPA and a Flyway migration for ops.repositories. A framework-free Incident root now protects failed-origin and approved lifecycle invariants, with value objects for execution identity/outcome and verification. Runtime incident persistence, public business endpoints, registration, broker consumption and release automation remain unimplemented.
+The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 and local OpenAPI/Swagger UI (springdoc 3.2.0). The second controlled increment adds an internal repository-by-UUID query through domain/application/JPA and a Flyway migration for ops.repositories. A framework-free Incident root now protects failed-origin and approved lifecycle invariants, with value objects for execution identity/outcome and verification. The operational schema, internal execution/incident queries and opt-in Service Bus snapshot receiver are implemented locally. Public business endpoints, human configuration/registration and release automation remain unimplemented.
 
 ## Documentation
 
@@ -49,6 +49,8 @@ The local profile applies migrations to this development database and enables AP
 
 Read the assigned HTTP port in the `Tomcat started on port` log entry. OpenAPI: `http://127.0.0.1:<port>/v3/api-docs`; Swagger UI: `http://127.0.0.1:<port>/swagger-ui/index.html`. The specification still has no business paths. HTTP binds to `127.0.0.1`; these settings are local development choices, not an approved ACA runtime/access contract. The internal query is available through RepositoryQueryService, not HTTP.
 
+Service Bus is off by default. Activating it requires PIPELINE_MESSAGING_ENABLED=true plus PIPELINE_MESSAGING_NAMESPACE, PIPELINE_MESSAGING_TOPIC, PIPELINE_MESSAGING_SUBSCRIPTION, PIPELINE_MESSAGING_MAX_MESSAGE_BYTES, PIPELINE_MESSAGING_CONCURRENCY, PIPELINE_MESSAGING_LOCK_RENEWAL_SECONDS and PIPELINE_MESSAGING_DRAIN_SECONDS. The namespace is its fully qualified host. Delivery limits must be positive (renewal may be zero); the subscription must support peek-lock delivery/maxDeliveryCount=10 and the application identity must have scoped receive/settlement rights. The adapter uses system-assigned managed identity and creates no broker entities. Do not enable it against a real target without its integration authorization and readiness agreement. Local verification never requires these settings or Azure credentials.
+
 Stop the application with Ctrl+C. Stop the example database with `docker stop pipeline-postgres-dev`; its container and data are disposable and removed on exit. The Flyway history table is ops.pipeline_flyway_schema_history; application schema changes come from Flyway, with Hibernate ddl-auto=validate and open-in-view disabled.
 
 Regression checks also cover distinct metadata, PostgreSQL microsecond precision, exact identity/required-field rejection and the actual default/local startup migration contract. The [increment record](docs/implementation-catalog-query.md#verification-progress) preserves historical verification evidence. The Windows wrapper remains untested on Windows.
@@ -72,3 +74,11 @@ Follow the organization [contribution policy](https://github.com/pipesor-org/.gi
 Start Codex from this repository root so its [repository instructions](AGENTS.md) are discovered. Project configuration is in [.codex/config.toml](.codex/config.toml); [pipeline_reviewer](.codex/agents/pipeline-reviewer.toml) defines a focused reviewer. Review roles do not create separate sandbox permissions.
 
 After changing instructions, start a fresh session and ask it to identify its active instruction sources. See the official [instruction-discovery guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md) and [subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents). A successful TOML parse alone does not establish live discovery or reviewer execution.
+
+## Operational persistence and snapshot delivery
+
+V2–V5 initialize the six confirmed ops tables, origin safeguards, the local capability storage shape and technical execution_event_receipts. V1 is unchanged. Before default startup, migrate an existing schema through the authorized runner; Hibernate stays validate-only and default Flyway stays disabled. The local profile is for a disposable database, not a production runner decision.
+
+Execution snapshots persist their execution/stages, optional automatic incident plus failed ORIGIN, and receipt atomically. Durable message/content hashes, exact source-version ordering, identity checks and deterministic IDs protect retries and stale/conflicting snapshots. Manual SDK settlement occurs after commit; transient failures retry and exhausted deliveries go to DLQ. No payload or token storage is added. Internal execution/incident projections are available through query services without public REST routes.
+
+The receiver is disabled unless explicitly configured, and no Azure integration is certified. PostgreSQL tests use real migrations and transactions; only the SDK delivery context is simulated. Grant management, human audit writes and GitHub-dependent onboarding are a separate local implementation slice. No machine-processing branch filter or automatic backfill is introduced.
