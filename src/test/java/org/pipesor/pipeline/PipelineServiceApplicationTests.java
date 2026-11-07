@@ -15,4 +15,11 @@ class PipelineServiceApplicationTests extends PostgresIntegrationTest {
     void swaggerUiIsDisabledByDefault(@Autowired RestTestClient client) {
         client.get().uri("/swagger-ui/index.html").exchange().expectStatus().isNotFound();
     }
+    @Test
+    void businessApiStaysClosedWithoutIdentityConfiguration(@Autowired RestTestClient client) {
+        client.get().uri("/api/v1/pipelines").exchange().expectStatus().isUnauthorized();
+        client.get().uri("/api/v1/pipelines").header("Authorization", "Bearer untrusted")
+                .exchange().expectStatus().isUnauthorized();
+    }
+
 }

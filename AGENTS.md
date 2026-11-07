@@ -11,6 +11,7 @@
 ## Implementation constraints
 
 - Keep pipeline/execution/stage/incident behavior within this service's documented ownership. Check affected callers, events, queries and persistence together when changing behavior; do not add cross-context writes or ORM navigation to make an integration convenient.
+- Human operations follow the [ADR-020 local implementation and boundaries](docs/architecture.md#adr-020-local-implementation-and-boundaries): require current verified GitHub access as well as AIOps grants, including child and referenced resources. Keep connector preflight outside SQL write transactions and recheck local grants in the write unit of work. Without an executable connector contract, retain the unavailable adapter; never add a permissive local fallback or route around it with direct GitHub calls/tokens.
 - Do not treat inferred access grants as an authorization policy. For consumer changes, verify how duplicate, delayed and independently arriving events affect execution state; use the agreed contract rather than assuming ordering or exactly-once delivery.
 - A request to implement a local increment authorizes its required local code, tooling and checks. Do not create cloud resources, permissions or secrets, or modify neighboring repositories as a side effect. Keep credentials and sensitive evidence out of committed files and reported output.
 - If a required transition rule, event/API contract or access policy is unresolved, identify the specific pending decision and its impact. Continue independent work; do not invent domain behavior or block the whole service because an unrelated decision remains open.
@@ -19,6 +20,6 @@
 
 Use the applicable checks documented in the README. Add behavior checks with the first executable increment, including failure cases material to that change. For documentation-only edits, check affected links and source coherence; parse TOML when changing agent configuration. Do not claim a build or integration passed before it exists and has run.
 
-Keep the documentation that owns a changed behavior or command current in the same change. Report what changed, checks actually performed and remaining blockers. For substantial work spanning sessions, keep a task-specific plan with scope, acceptance criteria and verification progress; a small edit needs no plan file.
+Keep the documentation that owns a changed behavior or command current in the same change. Report what changed, checks actually performed and remaining blockers. Keep scope and verification notes in the existing README or architecture document when needed; do not create a document per increment. Test meaningful behavior and specific failure causes rather than optimizing test counts. Do not publish branches, PRs or other changes without the user's explicit authorization for publication.
 
 When a focused review is warranted and delegation is authorized, `pipeline_reviewer` checks execution consistency, ownership, delivery semantics and access-policy assumptions. Supply the task and affected paths. Its review supplements the main agent's verification and human review.
