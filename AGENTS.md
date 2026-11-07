@@ -22,4 +22,21 @@ Use the applicable checks documented in the README. Add behavior checks with the
 
 Keep the documentation that owns a changed behavior or command current in the same change. Report what changed, checks actually performed and remaining blockers. Keep scope and verification notes in the existing README or architecture document when needed; do not create a document per increment. Test meaningful behavior and specific failure causes rather than optimizing test counts. Do not publish branches, PRs or other changes without the user's explicit authorization for publication.
 
-When a focused review is warranted and delegation is authorized, `pipeline_reviewer` checks execution consistency, ownership, delivery semantics and access-policy assumptions. Supply the task and affected paths. Its review supplements the main agent's verification and human review.
+## Task-based agent workflow
+
+This repository authorizes the primary agent to delegate relevant work within the user's existing task authorization. For substantial work with ambiguous requirements, roadmap questions or consequential contract changes, use `service_analyst` for bounded research, the built-in `worker` for implementation and `pipeline_reviewer` for independent review. Use `explorer` for narrow code questions. Small, well-specified fixes can be implemented directly with proportionate review; do not run every role mechanically.
+
+The primary agent remains responsible for scope, architecture consistency, integration, verification and completion. Reuse the analyst's evidence; reread sources when disputed, changed or insufficient. Carry forward applicable user approvals. Routine implementation choices do not require repeated confirmation. Only genuinely unresolved decisions block their dependent work; continue independent authorized work. Analysis/review does not add an approval layer or authorize publication, architecture changes or external writes.
+
+Use this sequence when appropriate: bounded analysis → select specified and authorized work → worker implementation → independent review → fixes → primary-agent verification and report. Parallelize only independent tasks, with at most two open subagent threads excluding the primary. Assign workers explicit file ownership, scope, acceptance criteria and relevant paths; preserve others' changes and do not delegate integration conflicts away. Research/review roles do not edit or delegate.
+
+Pass a compact feature brief, not the full research conversation:
+
+- Goal, scope and exclusions; source links/paths, consulted revisions and relevant local changes.
+- Consequential requirements with provenance and status: integrated, explicitly approved locally, proposed, assumed/inferred or unresolved. A local approval does not make the source integrated.
+- Observable acceptance criteria and material failures; affected callers, contracts, persistence, configuration and dependencies.
+- Open decisions with the exact question, impact, options/recommendation and documented approval authority (or its absence); ordered work ready now versus awaiting a decision/contract.
+
+Workers implement the smallest complete authorized change, meaningful checks and owning documentation; return changed files, exact verification results, deviations and blockers. Escalate conflicting requirements without inventing policy. Reviewers receive the same brief but independently inspect connected paths and source assumptions, assess acceptance-criteria coverage and failure-test effectiveness, and distinguish simulated from real integration. Their findings supplement primary-agent verification and human review.
+
+Keep handoffs in agent messages. Persist durable accepted decisions in existing owning documents; no document per increment. On the first suitable feature, assess repeated research, unnecessary clarification loops and requirement-related rework before adopting this pilot across services. Model/effort defaults and configuration discovery are documented in the [optional Codex setup](README.md#optional-codex-setup); adjust them to demonstrated task complexity rather than using maximum effort by default.

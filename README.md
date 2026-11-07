@@ -98,6 +98,32 @@ Follow the organization [contribution policy](https://github.com/pipesor-org/.gi
 
 ## Optional Codex setup
 
-Start Codex from this repository root so its [repository instructions](AGENTS.md) are discovered. Project configuration is in [.codex/config.toml](.codex/config.toml); [pipeline_reviewer](.codex/agents/pipeline-reviewer.toml) defines a focused reviewer. Review roles do not create separate sandbox permissions.
+Start Codex from this repository root in a trusted project so [repository instructions](AGENTS.md) and [project configuration](.codex/config.toml) are loaded. The [task-based workflow](AGENTS.md#task-based-agent-workflow) is a Pipeline-local pilot; shared backend conventions and other repositories are unchanged. Custom roles inherit permissions; a no-edit instruction is a behavioral constraint, not a separate read-only sandbox.
 
-After changing instructions, start a fresh session and ask it to identify its active instruction sources. See the official [instruction-discovery guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md) and [subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents). A successful TOML parse alone does not establish live discovery or reviewer execution.
+| Role | Model | Reasoning effort | Use |
+|---|---|---|---|
+| Primary coordinator | gpt-6.1-sol | medium | Scope, coordination, integration and completion. |
+| [service_analyst](.codex/agents/service-analyst.toml) | gpt-6.1-sol | high | Ambiguous requirements, source/approval reconciliation and decision options. |
+| Built-in worker | gpt-6.1-sol | high | Implementation and meaningful verification; uses project subagent defaults. |
+| [pipeline_reviewer](.codex/agents/pipeline-reviewer.toml) | gpt-6.1-sol | high | Independent domain, authorization, acceptance and test-effectiveness review. |
+
+Keep the limit of two open spawned threads, excluding the primary. Use direct implementation for small clear fixes; do not add a researcher to every task. The built-in explorer remains available for narrow code questions and otherwise inherits project subagent defaults. For a straightforward bounded worker/explorer task, an explicit spawn setting may reduce effort to medium; higher effort requires concrete complexity, such as a disputed invariant or concurrency/security failure. Do not use max/ultra routinely. These are starting choices consistent with IaC, not measured latency or quality guarantees; use an available model if the configured one is unavailable and disclose any substitution.
+
+The coordinator and built-in-role defaults are in .codex/config.toml. Custom role files explicitly pin model and effort and take precedence for those roles; change their files when revising the policy. Do not change global configuration, permissions or providers as part of a role adjustment. See the official [subagent guide](https://learn.chatgpt.com/docs/agent-configuration/subagents) for model/effort precedence and role discovery.
+
+Example request:
+
+> Refine this feature with service_analyst, preserve existing approvals and implement
+> the authorized work with worker. Have pipeline_reviewer independently check the
+> acceptance criteria and meaningful failure tests, resolve findings and report
+> exact verification and remaining dependencies. Do not publish or deploy.
+
+After changing instructions/configuration, start a fresh session. Parsing TOML alone does not establish live discovery. From this trusted repository, inspect model-visible role descriptions without invoking a model:
+
+```bash
+codex debug prompt-input 'List the active repository instructions, specialist roles and authorization boundaries.'
+```
+
+Check the configured model/effort and thread limit in the TOML files against the table, and confirm service_analyst/pipeline_reviewer descriptions are present alongside the built-in worker/explorer in the prompt diagnostic. Avoid publishing raw diagnostic output, which can include local context. These checks inspect configuration/discovery, not model availability or delegation behavior. For a live pilot in a fresh session, ask the analyst for a bounded no-edit brief and the reviewer to challenge it; then validate implementation handoffs on an authorized feature. See also the official [instruction-discovery guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
+
+Setup verification (2026-11-06, codex-cli 0.167.0): TOML parsing, local file links, whitespace and prompt-input role discovery passed without a model invocation. The separate app-server --print-startup-config diagnostic returned startup configuration unavailable, including outside the read-only sandbox. The CLI also rejects --strict-config for debug; neither strict schema validation nor effective startup/model availability is certified here. No live delegation pilot or application tests were run for this instructions-only change.
