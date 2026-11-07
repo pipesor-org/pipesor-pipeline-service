@@ -16,6 +16,7 @@ public class PostgresTestConfiguration {
     @ServiceConnection
     PostgreSQLContainer postgres() {
         return new PostgreSQLContainer(POSTGRES_IMAGE)
+                .withInitScript("db/shared-audit.sql")
                 .withDatabaseName("pipeline_test")
                 .withUsername("pipeline_test")
                 .withPassword("pipeline_test");
