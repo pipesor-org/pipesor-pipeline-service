@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!target/
+!target/pipesor-pipeline-service-0.0.1-SNAPSHOT.jar

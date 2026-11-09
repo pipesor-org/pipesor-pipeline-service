@@ -7,3 +7,19 @@
 
 # Maven build output
 /target/
+
+# Local delivery validation and Python tooling caches
+/.delivery/
+/deployment-result.json
+/deployment-before.json
+/deployment-before.json.tmp
+/deployment-result.json.tmp
+# Local delivery tooling
+__pycache__/
+*.py[cod]
+/service-image.tar
+/service-image.tar.sha256
+/candidate.json
+/.tools/
+node_modules/
+lefthook-local.yml

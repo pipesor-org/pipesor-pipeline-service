@@ -1,10 +1,10 @@
 # Architecture consumption
 
-Current approved evolution: [ADR-020 — GitHub user access and workflow onboarding](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-020-github-user-access-and-workflow-onboarding.md), explicitly approved by the user on 2026-11-06. The source checkout was clean at `18dacfbfcee22a92bb98dba85a378b023e96ac70` before this update; ADR-020 and its model changes are a local, uncommitted overlay until integrated. The historical baseline below predates it. See [approved GitHub access evolution](#approved-github-access-evolution) for service impact and the implementation gap.
+Current approved evolution: [ADR-020 — GitHub user access and workflow onboarding](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-020-github-user-access-and-workflow-onboarding.md), user-approved on 2026-11-06 and now integrated in pipesor-docs main. Current source consultation for local delivery preparation (2026-11-08): `e22627cfee10b0b02edab084b98eb18926c678b5`. The later local capture/publication draft in `model/domain_decisions.md` belongs to Ingestion and is not treated as an accepted CI/CD decision. See [approved GitHub access evolution](#approved-github-access-evolution) for service impact and the remote integration gap.
 
 Historical consultation on 2026-11-06: `pipesor-org/pipesor-docs` full Git SHA **`c84ef3e4629fcb0c38315f32b641a5fb949e450d`**, using the then-clean local checkout (no uncommitted source overlay at that historical cut). Canonical model: `ey_aiops_ci_cd_diagnosis`, version `0.5.0-mvp-iac-alignment`, status `draft`. `pipeline_service` is a confirmed container with an independent repository under ADR-018; confirmed is a model status only.
 
-Current task consultation: pipesor-docs main remains 18dacfbfcee22a92bb98dba85a378b023e96ac70, plus the explicitly approved local ADR-020 overlay and related model/decision edits. ADR-020 file SHA-256: b19c93d94aeed2335c2c19fd3b01f346193bce29978d03c5266e3b060f99122e. The overlay is not integrated/published; this task modifies only Pipeline Service. The user's current prompt additionally authorizes registration and policy/ownership contracts, and their subsequent explicit answer approves grants/activity reads. Neither approval silently modifies the source repository or its pending registers.
+The historical implementation approvals below remain valid within their recorded scope. Current delivery work adds local CI/container tooling and an explicitly disabled ACA adapter; it does not approve Azure activation, D03/D03-EXP, a new deployment ownership standard or changes to upstream ADRs.
 
 Architecture source links below follow `main`. The summary reflects the consulted revision recorded above; review it against subsequent accepted decisions before implementation.
 
@@ -28,6 +28,8 @@ See the [documentation baseline](documentation-baseline.md) for the remote recon
 - Terraform retains four isolated environment roots/states; only `dev` is selected for the temporary academic MVP. Services must be implemented, integrated locally and validated before separately authorized Azure actions. IaC preparation is not deployment evidence; future promotion rules remain applicable outside the dev exception.
 
 PD-033–036 and the stage-5 report are committed at the consulted revision. The old uncommitted overlay description is superseded. The pending register identifies Jhon Galvez and Ramiro Guzman as contract approval authority; approval count, GitHub enforcement and actual delivery-contract approvals remain unspecified.
+
+The [shared CI/CD promotion TO-BE](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/cicd.md#future-environment-promotion-to-be) defines the future environment/qualification contract separately from the current dev-only execution footprint. It is a shared design target, not activation or amendment of upstream ADRs.
 
 ## Repository boundary inventory
 
@@ -238,7 +240,7 @@ Controllers do not hold SQL transactions across external checks. Human preflight
 
 ## Approved GitHub access evolution
 
-User-approved on 2026-11-06 after research; authoritative decision and service-impact matrix: [ADR-020](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-020-github-user-access-and-workflow-onboarding.md). The local implementation now enforces cumulative policy through the in-process connector port and rejects missing verification in normal runtime. Explicit connector doubles verify the local logic; no executable remote contract, GitHub connection or integrated compliance is certified. This section consumes the approved uncommitted source overlay, not a merged ADR.
+User-approved on 2026-11-06 after research; authoritative decision and service-impact matrix: [ADR-020](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-020-github-user-access-and-workflow-onboarding.md). The local implementation now enforces cumulative policy through the in-process connector port and rejects missing verification in normal runtime. Explicit connector doubles verify the local logic; no executable remote contract, GitHub connection or integrated compliance is certified. The decision is now integrated in the current consulted main; the absence of an executable remote integration remains.
 
 ### Service boundaries
 
