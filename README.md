@@ -298,3 +298,29 @@ codex debug prompt-input 'List the active repository instructions, specialist ro
 Check the configured model/effort and thread limit in the TOML files against the table, and confirm service_analyst/pipeline_reviewer descriptions are present alongside the built-in worker/explorer in the prompt diagnostic. Avoid publishing raw diagnostic output, which can include local context. These checks inspect configuration/discovery, not model availability or delegation behavior. For a live pilot in a fresh session, ask the analyst for a bounded no-edit brief and the reviewer to challenge it; then validate implementation handoffs on an authorized feature. See also the official [instruction-discovery guide](https://learn.chatgpt.com/docs/agent-configuration/agents-md).
 
 Setup verification (2026-11-06, codex-cli 0.167.0): TOML parsing, local file links, whitespace and prompt-input role discovery passed without a model invocation. The separate app-server --print-startup-config diagnostic returned startup configuration unavailable, including outside the read-only sandbox. The CLI also rejects --strict-config for debug; neither strict schema validation nor effective startup/model availability is certified here. No live delegation pilot or application tests were run for this instructions-only change.
+
+### Shared Java automation adoption
+
+[Workspace](https://github.com/pipesor-org/pipesor-workspace/blob/main/README.md)
+owns the pinned Maven/report composite and container publication workflow. This
+repository retains the CI entry point `ci.yml`, main/PR gates, concurrency, local
+JDK 25 setup, contribution/release-tool tests, Dockerfile and image smoke check.
+The publisher has no checkout or service-script execution; it consumes the exact
+same-run/attempt image archive and preserves candidate schema 1 and naming.
+Release/deploy/rollback logic and their source disables are unchanged.
+
+The pinned Workspace commit is integrated in main. Authorize private Actions
+access and verify hosted execution before merging this caller migration. No remote publication or access-setting change
+is part of this local increment. CI code SHA (including the fixed automation ref)
+traces the shared version; upgrade it through reviewed PRs, not floating tags.
+For local act verification before private distribution, add
+`--local-repository pipesor-org/pipesor-workspace@c11b183f5248b708794192e6d6ce4d781ef340f5=<path-to-reviewed-workspace>`
+to the existing command. This substitutes local files and does not validate private
+GitHub access or the shared publisher. Do not execute publish/release/deploy locally.
+
+Local validation on 2026-11-11: actionlint passed (ShellCheck omitted), the existing
+25 Python delivery/image/retention checks and 8 Bun release checks passed, and
+act verify with the local Workspace substitution passed all 69 Java tests plus
+packaged-image smoke. Publisher shell/provenance checks use simulated Docker;
+private shared-component distribution and the reusable publisher on GitHub remain
+unverified. No registry or Azure operation was performed.

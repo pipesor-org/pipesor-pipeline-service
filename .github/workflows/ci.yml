@@ -61,7 +61,7 @@ jobs:
           java-version: '25'
           cache: ${{ env.ACT != 'true' && 'maven' || '' }}
       - name: Compile, test with PostgreSQL and package
-        run: ./mvnw -B -ntp clean verify
+        uses: pipesor-org/pipesor-workspace/actions/java-verify@c11b183f5248b708794192e6d6ce4d781ef340f5 # shared CI v1
       - name: Build and check the candidate image
         id: image
         shell: bash
@@ -88,74 +88,11 @@ jobs:
           if-no-files-found: error
           retention-days: 1
           compression-level: 6
-      - name: Store test reports
-        if: always() && env.ACT != 'true'
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: tests-${{ github.run_id }}-${{ github.run_attempt }}
-          path: target/surefire-reports/TEST-*.xml
-          if-no-files-found: ignore
-          retention-days: 14
 
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.act
     needs: verify
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    uses: pipesor-org/pipesor-workspace/.github/workflows/publish-container.yml@c11b183f5248b708794192e6d6ce4d781ef340f5 # shared CI v1
     permissions:
       contents: read
       packages: write
-    env:
-      IMAGE: ${{ needs.verify.outputs.image }}
-    steps:
-      - name: Refuse publication under act
-        run: test "${ACT:-}" != 'true'
-      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
-        with:
-          name: image-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: Load the tested image
-        run: |
-          sha256sum --check service-image.tar.sha256
-          docker load --input service-image.tar
-          test "$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
-      - name: Publish without rebuilding
-        env:
-          GHCR_TOKEN: ${{ github.token }}
-        run: |
-          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-          docker push "$IMAGE"
-      - name: Record immutable candidate
-        run: |
-          docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}' > published-reference.txt
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          import re
-
-          image = os.environ['IMAGE'].rsplit(':', 1)[0]
-          reference = Path('published-reference.txt').read_text().strip()
-          if not re.fullmatch(re.escape(image) + r'@sha256:[0-9a-f]{64}', reference):
-              raise SystemExit('Published digest does not match the candidate repository')
-          candidate = {
-              'schema_version': 1,
-              'source_sha': os.environ['GITHUB_SHA'],
-              'image': image,
-              'digest': reference.split('@', 1)[1],
-              'build_run_id': os.environ['GITHUB_RUN_ID'],
-              'build_run_attempt': os.environ['GITHUB_RUN_ATTEMPT'],
-          }
-          Path('candidate.json').write_text(json.dumps(candidate, indent=2) + '\n')
-          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write(f"Published candidate: `{reference}`\n\nSource: `{candidate['source_sha']}`\n")
-          PY
-      - name: Store candidate handoff
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: candidate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: candidate.json
-          if-no-files-found: error
-          retention-days: 90
-      - name: Remove registry credentials
-        if: always()
-        run: docker logout ghcr.io
