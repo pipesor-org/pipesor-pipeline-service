@@ -61,7 +61,7 @@ jobs:
           java-version: '25'
           cache: ${{ env.ACT != 'true' && 'maven' || '' }}
       - name: Compile, test with PostgreSQL and package
-        uses: pipesor-org/pipesor-workspace/actions/java-verify@923ac0452f7be62c915e0e205cd9e5d2ac1af7a0 # shared CI v1
+        uses: pipesor-org/pipesor-workspace/actions/java-verify@c11b183f5248b708794192e6d6ce4d781ef340f5 # shared CI v1
       - name: Build and check the candidate image
         id: image
         shell: bash
@@ -92,7 +92,7 @@ jobs:
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main' && !github.event.act
     needs: verify
-    uses: pipesor-org/pipesor-workspace/.github/workflows/publish-container.yml@923ac0452f7be62c915e0e205cd9e5d2ac1af7a0 # shared CI v1
+    uses: pipesor-org/pipesor-workspace/.github/workflows/publish-container.yml@c11b183f5248b708794192e6d6ce4d781ef340f5 # shared CI v1
     permissions:
       contents: read
       packages: write

@@ -309,12 +309,12 @@ The publisher has no checkout or service-script execution; it consumes the exact
 same-run/attempt image archive and preserves candidate schema 1 and naming.
 Release/deploy/rollback logic and their source disables are unchanged.
 
-Publish the pinned Workspace commit and authorize private Actions access before
-publishing this caller migration. No remote publication or access-setting change
+The pinned Workspace commit is integrated in main. Authorize private Actions
+access and verify hosted execution before merging this caller migration. No remote publication or access-setting change
 is part of this local increment. CI code SHA (including the fixed automation ref)
 traces the shared version; upgrade it through reviewed PRs, not floating tags.
 For local act verification before private distribution, add
-`--local-repository pipesor-org/pipesor-workspace@923ac0452f7be62c915e0e205cd9e5d2ac1af7a0=<path-to-reviewed-workspace>`
+`--local-repository pipesor-org/pipesor-workspace@c11b183f5248b708794192e6d6ce4d781ef340f5=<path-to-reviewed-workspace>`
 to the existing command. This substitutes local files and does not validate private
 GitHub access or the shared publisher. Do not execute publish/release/deploy locally.
 
