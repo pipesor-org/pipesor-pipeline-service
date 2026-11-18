@@ -288,3 +288,32 @@ Local verification uses PostgreSQL and real HTTP/JWT signature validation with a
 Blocked external work remains precise: Ingestion must provide a versioned executable access/metadata contract, authenticated service calls, verifiable subject propagation, bounded timeout/rate-limit/error mapping, linked identity/installation/SSO semantics and secure credential custody. No routes, payloads, audiences, credentials or propagation mechanisms are selected for that API here. Frontend owns connection/discovery UI and sends selected IDs; it cannot authorize from flags. Log/Event and Recommendation owners need an agreed authorization context so evidence/diagnostic/review APIs cannot bypass repository restrictions; this task adds no calls/ops reads for them. IaC/identity owners retain separately authorized configuration and rollout. Normal Pipeline runtime cannot provide an operational GitHub onboarding flow until those dependencies are resolved.
 
 The GitHub check/use race remains: this is a local SQL transaction after verification, not a distributed transaction or instantaneous revocation guarantee. Connection loss does not delete historical data, change retention, modify ACTIVE/PAUSED or stop shared machine monitoring. Registration/reactivation does not backfill. defaultBranch is informational, event processing has no branch filter and criticality does not derive incident severity. Incident responsibility remains distinct from pipeline team metadata.
+
+## Machine operational-reference validation — approved local increment
+
+The user approved the Log/Event → Pipeline validation proposal in Correlation's
+PD-031 addendum. `ValidateOperationalReferences` provides an internal operation
+for the automatic ORIGIN case. Every call first requires its explicitly injected
+machine authority to confirm the exact tenant/account/installation/repository/
+workflow/revision binding for the authenticated caller. Machine authority remains
+a required composition dependency. Its response precedes any owned-row lookup,
+including deterministic-ID mismatch reporting. The existing human access flow
+continues to use its own authority.
+
+The operation preserves the correlation ID and validates deterministic pipeline,
+execution/attempt and incident identity. One PostgreSQL statement verifies the
+committed repository/workflow, execution run/attempt and failed ORIGIN membership.
+Absent owner rows return `NOT_READY`; committed contradictions return `MISMATCH`.
+Denied or unavailable authority prevents the lookup, and failed reads return
+`UNAVAILABLE`. Responses contain only the decision. A new processing attempt
+always revalidates authorization. The scope revision establishes current
+permission when the authority checks it; historical message attestation requires
+the separate owner contract.
+
+The operation is manually composed for local verification. Authentication,
+request/response serialization, trusted deadlines and the remote
+Pipeline → Ingestion scope adapter must be implemented under the approved
+cross-service contract before enabling the Log/Event integration. Caller tokens,
+audiences, numeric budgets and broker settlement remain environment/contract
+inputs. PostgreSQL fixtures exercise the existing snapshot handler to create
+owner records; authority responses in these fixtures are synthetic.
