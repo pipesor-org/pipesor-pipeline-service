@@ -40,6 +40,10 @@ Compile, run the domain and integration tests and package the executable JAR:
 ./mvnw -B -ntp clean verify
 ```
 
+The same verification includes `OperationalReferenceTests`, which checks late
+owner records, committed reference contradictions and authority-before-read
+behavior using disposable PostgreSQL and an explicit test machine authority.
+
 For an interactive local run, start a disposable PostgreSQL database (these synthetic credentials are exclusively for this local example):
 
 ```bash
