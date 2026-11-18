@@ -142,3 +142,15 @@ Frontend and Ingestion owners still deliver linking/discovery/callback/revocatio
 The implementation agreement authorizes POST /api/v1/pipelines and PUT /policy and /ownership, preserving PUT /settings; a subsequent explicit session approval authorizes GET /grants and /activities. This does not authorize new connector endpoints, token propagation, resources or rollout. ADR-020/model evolution is integrated in the consulted pipesor-docs main e22627cfee10b0b02edab084b98eb18926c678b5. CI/CD consolidation prepares this service and the shared guide for reviewed integration; it does not change that connector boundary or authorize Azure activation.
 
 No GitHub runtime URL, audience, authentication secret, token environment variable or permissive local switch is introduced. A concrete owner-approved remote contract is required before replacing the unavailable connector. Existing Entra API and PostgreSQL configuration remain necessary and independent. Audited registration now supplies the initial CONFIGURE grant after verified repository administration, without preloaded Repository rows or a default administrator. Existing-pipeline grant recovery remains unimplemented pending its explicit procedure.
+
+## Internal evidence owner validation v1
+
+`/internal/v1/evidence/operational-reference-checks` is disabled unless
+`pipeline.owner-validation.enabled=true`. Explicit configuration supplies
+the Entra v2 issuer, signing-key URI, directory tenant, recipient audience,
+permitted Log/Event client and principal, operation role, clock skew,
+request time/size and concurrency limits, Ingestion HTTPS endpoint and
+token scope, connection timeout and response size limit. The Ingestion
+check uses a recipient-specific managed identity token and the remaining
+deadline. The owned PostgreSQL read occurs after Ingestion authorizes the
+capture scope. Deployment still requires the actual identities and inputs.
