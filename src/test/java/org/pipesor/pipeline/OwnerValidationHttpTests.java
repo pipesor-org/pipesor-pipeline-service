@@ -70,6 +70,9 @@ import static org.assertj.core.api.Assertions.assertThat;
         "pipeline.owner-validation.caller-client-id=" + OwnerValidationHttpTests.CLIENT,
         "pipeline.owner-validation.caller-principal-id=" + OwnerValidationHttpTests.PRINCIPAL,
         "pipeline.owner-validation.role=Evidence.Check",
+        "pipeline.owner-validation.correlation-client-id=" + OwnerValidationHttpTests.CORRELATION_CLIENT,
+        "pipeline.owner-validation.correlation-principal-id=" + OwnerValidationHttpTests.CORRELATION_PRINCIPAL,
+        "pipeline.owner-validation.correlation-role=Correlation.OperationalReferences.Check",
         "pipeline.owner-validation.clock-skew=0s",
         "pipeline.owner-validation.request-timeout=3s",
         "pipeline.owner-validation.max-request-bytes=2048",
@@ -83,6 +86,9 @@ class OwnerValidationHttpTests extends PostgresIntegrationTest {
     static final String DIRECTORY = "31bb0907-a72d-422e-ad83-96355c46b2c3";
     static final String CLIENT = "4166972a-7490-433e-a5cf-3725d6ff823c";
     static final String PRINCIPAL = "08abff88-1291-47a2-b797-17b862032e95";
+    static final String CORRELATION_CLIENT = "3086a1a3-f6ef-47ae-a049-cf9549c96f48";
+    static final String CORRELATION_PRINCIPAL = "b624214f-7c7e-4688-b49a-53f1c7aeb346";
+    private static final String CORRELATION_ROLE = "Correlation.OperationalReferences.Check";
     private static final String CAPTURE = "6557f111-9a27-40c6-8396-97a8ed967821";
     private static final String CORRELATION = "owner-validation-http";
     private static final String REPOSITORY = "912034000000000000001";
@@ -144,6 +150,26 @@ class OwnerValidationHttpTests extends PostgresIntegrationTest {
             return new HttpIngestionScopeAuthority(scope.client, scope.uri, remaining ->
                     new AccessToken("test-recipient-token", OffsetDateTime.now().plus(scope.tokenLifetime.get())), 1024, Clock.systemUTC());
         }
+    }
+
+    @Test
+    void acceptsCorrelationOnlyWithItsWholeConfiguredCallerTuple() throws Exception {
+        var correlation = Map.<String,Object>of("azp", CORRELATION_CLIENT, "oid", CORRELATION_PRINCIPAL,
+                "roles", List.of(CORRELATION_ROLE));
+        for (var crossed : List.of(
+                Map.<String,Object>of("azp", CORRELATION_CLIENT),
+                Map.<String,Object>of("oid", CORRELATION_PRINCIPAL),
+                Map.<String,Object>of("roles", List.of(CORRELATION_ROLE)),
+                Map.<String,Object>of("azp", CORRELATION_CLIENT, "oid", CORRELATION_PRINCIPAL))) {
+            post(body(), token(crossed)).expectStatus().isForbidden();
+        }
+        assertThat(scope.calls).hasValue(0);
+        post(body(), token(correlation)).expectStatus().isOk().expectBody()
+                .jsonPath("$.decision").isEqualTo("NOT_READY");
+        assertThat(scope.calls).hasValue(1);
+        post(body(), token(Map.of())).expectStatus().isOk().expectBody()
+                .jsonPath("$.decision").isEqualTo("NOT_READY");
+        assertThat(scope.calls).hasValue(2);
     }
 
     @Test

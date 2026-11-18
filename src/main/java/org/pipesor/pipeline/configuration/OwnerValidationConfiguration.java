@@ -67,10 +67,14 @@ public class OwnerValidationConfiguration {
                         try {
                             var jwt = token.getToken();
                             var roles = jwt.getClaimAsStringList("roles");
-                            allowed = "POST".equals(context.getRequest().getMethod())
-                                    && settings.callerPrincipalId().equals(jwt.getClaimAsString("oid"))
+                            boolean logEventCaller = settings.callerPrincipalId().equals(jwt.getClaimAsString("oid"))
                                     && settings.callerClientId().equals(jwt.getClaimAsString("azp"))
                                     && roles != null && roles.contains(settings.role());
+                            boolean correlationCaller = settings.correlationPrincipalId() != null
+                                    && settings.correlationPrincipalId().equals(jwt.getClaimAsString("oid"))
+                                    && settings.correlationClientId().equals(jwt.getClaimAsString("azp"))
+                                    && roles != null && roles.contains(settings.correlationRole());
+                            allowed = "POST".equals(context.getRequest().getMethod()) && (logEventCaller || correlationCaller);
                         } catch (RuntimeException invalid) { allowed = false; }
                     }
                     return new org.springframework.security.authorization.AuthorizationDecision(allowed);

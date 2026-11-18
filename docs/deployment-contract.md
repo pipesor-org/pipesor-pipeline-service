@@ -154,3 +154,12 @@ token scope, connection timeout and response size limit. The Ingestion
 check uses a recipient-specific managed identity token and the remaining
 deadline. The owned PostgreSQL read occurs after Ingestion authorizes the
 capture scope. Deployment still requires the actual identities and inputs.
+
+The optional Correlation caller permission uses
+`pipeline.owner-validation.correlation-client-id`,
+`correlation-principal-id` and `correlation-role`. Supply all three together.
+Each must be distinct from the corresponding Log/Event setting. When absent,
+the endpoint accepts only its existing Log/Event caller. Authorization
+matches one entire client/principal/role tuple. It then applies the same
+current-scope and committed-reference checks. Mixing credentials from the two
+callers is denied before any Ingestion request.

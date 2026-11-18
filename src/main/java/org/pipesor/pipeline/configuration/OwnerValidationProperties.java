@@ -10,7 +10,8 @@ public record OwnerValidationProperties(
         URI issuer, URI jwkSetUri, String tenant, String audience, String callerClientId,
         String callerPrincipalId, String role, Duration clockSkew, Duration requestTimeout,
         int maxRequestBytes, int maxResponseBytes, int maxInFlight,
-        URI ingestionUri, String ingestionScope, Duration connectTimeout) {
+        URI ingestionUri, String ingestionScope, Duration connectTimeout,
+        String correlationClientId, String correlationPrincipalId, String correlationRole) {
     public OwnerValidationProperties {
         if (!https(issuer) || !https(jwkSetUri) || !https(ingestionUri)
                 || !"/internal/v1/capture/machine-scope-checks".equals(ingestionUri.getPath())
@@ -22,6 +23,13 @@ public record OwnerValidationProperties(
                 || maxRequestBytes < 1 || maxRequestBytes == Integer.MAX_VALUE
                 || maxResponseBytes < 1 || maxResponseBytes == Integer.MAX_VALUE || maxInFlight < 1) {
             throw new IllegalArgumentException("Complete owner validation settings are required");
+        }
+        boolean correlationConfigured = correlationClientId != null || correlationPrincipalId != null || correlationRole != null;
+        if (correlationConfigured && (!uuid(correlationClientId) || !uuid(correlationPrincipalId)
+                || correlationRole == null || correlationRole.isBlank()
+                || correlationClientId.equals(callerClientId) || correlationPrincipalId.equals(callerPrincipalId)
+                || correlationRole.equals(role))) {
+            throw new IllegalArgumentException("Complete distinct Correlation caller settings are required");
         }
         requestTimeout.toNanos();
         connectTimeout.toNanos();
