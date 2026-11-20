@@ -328,3 +328,7 @@ act verify with the local Workspace substitution passed all 69 Java tests plus
 packaged-image smoke. Publisher shell/provenance checks use simulated Docker;
 private shared-component distribution and the reusable publisher on GitHub remain
 unverified. No registry or Azure operation was performed.
+
+### Local workflow registration browser pilot
+
+The opt-in `WorkflowRegistrationBrowserTest` starts the existing Pipeline API twice against retained disposable PostgreSQL. It uses the signed delegated test decoder and explicit GitHub facts double from the HTTP contract tests. It exercises real registration, list, detail and policy requests, checks denial and duplicate behavior, and confirms that registration creates no incident. See the [frontend advisor runbook](https://github.com/pipesor-org/pipesor-frontend/blob/main/docs/local-product-mvp.md#workflow-registration-pilot) for the browser verifier and setup.
