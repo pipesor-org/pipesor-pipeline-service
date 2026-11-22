@@ -5,6 +5,7 @@ import java.time.Clock;
 import org.pipesor.pipeline.catalog.application.ports.CaptureScopeSync;
 import org.pipesor.pipeline.catalog.application.ports.GitHubConnector;
 import org.pipesor.pipeline.catalog.infrastructure.capture.HttpCaptureScopeSync;
+import org.pipesor.pipeline.catalog.infrastructure.github.CachingGitHubConnector;
 import org.pipesor.pipeline.catalog.infrastructure.github.IngestionGitHubConnector;
 import org.pipesor.pipeline.execution.infrastructure.access.HttpIngestionScopeAuthority;
 import org.pipesor.pipeline.shared.interfaces.rest.CorrelationFilter;
@@ -25,10 +26,11 @@ public class IngestionConfiguration {
     @Bean
     GitHubConnector ingestionGitHubConnector(IngestionClientProperties settings, TransportPolicy transport,
             WorkloadTokens tokens, Clock clock) {
-        return new IngestionGitHubConnector(client(settings), transport, settings.baseUri(),
+        var live = new IngestionGitHubConnector(client(settings), transport, settings.baseUri(),
                 () -> tokens.issue("ingestion", IngestionGitHubConnector.ROLE), SubjectTokens::currentSession,
                 IngestionConfiguration::correlation, settings.requestTimeout(), settings.decisionBudget(), settings.maxResponseBytes(),
                 settings.maxBatchSize(), clock);
+        return new CachingGitHubConnector(live, settings.viewAccessCacheTtl(), clock);
     }
 
     @Bean

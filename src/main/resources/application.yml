@@ -58,6 +58,8 @@ pipeline:
     decision-budget: 5s
     max-response-bytes: 262144
     max-batch-size: 50
+    # ADR-020 amendment (MVP): a successful VIEW verification is reused for this long; commands always verify live.
+    view-access-cache-ttl: 30s
   capture-scope:
     # ADR-023: repeat every pipeline's monitoring status to Ingestion at readiness and periodically.
     reconcile-enabled: ${pipesor.capture-scope.reconcile-enabled:true}
