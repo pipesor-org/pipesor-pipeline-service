@@ -34,14 +34,23 @@ public final class ConfigurePipelineCommandHandler implements PipelineConfigurat
         this.ids = ids;
     }
 
+    /** Committed settings before and after one configuration command. */
+    public record Change(PipelineView before, PipelineView after) {
+        public boolean monitoringStatusChanged() { return before.monitoringStatus() != after.monitoringStatus(); }
+    }
+
     @Override
     public PipelineView handle(ConfigurePipelineCommand command) {
+        return configure(command).after();
+    }
+
+    public Change configure(ConfigurePipelineCommand command) {
         access.require(command.actorRef(), command.pipelineId(), AccessCapability.CONFIGURE);
         var before = settings.lock(command.pipelineId());
         var after = settings.update(command);
         audit.append(ids.get(), "pipeline", command.pipelineId(), command.section() == ConfigurePipelineCommand.Section.ALL ? "CONFIGURE" : "CONFIGURE_" + command.section().name(), command.actorRef(),
                 command.correlationId(), clock.instant().truncatedTo(ChronoUnit.MICROS), PipelineAuditMetadata.of(before), PipelineAuditMetadata.of(after));
-        return after;
+        return new Change(before, after);
     }
 
     @Override

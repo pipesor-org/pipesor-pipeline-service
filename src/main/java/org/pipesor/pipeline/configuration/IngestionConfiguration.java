@@ -2,7 +2,9 @@ package org.pipesor.pipeline.configuration;
 
 import java.net.http.HttpClient;
 import java.time.Clock;
+import org.pipesor.pipeline.catalog.application.ports.CaptureScopeSync;
 import org.pipesor.pipeline.catalog.application.ports.GitHubConnector;
+import org.pipesor.pipeline.catalog.infrastructure.capture.HttpCaptureScopeSync;
 import org.pipesor.pipeline.catalog.infrastructure.github.IngestionGitHubConnector;
 import org.pipesor.pipeline.execution.infrastructure.access.HttpIngestionScopeAuthority;
 import org.pipesor.pipeline.shared.interfaces.rest.CorrelationFilter;
@@ -34,6 +36,14 @@ public class IngestionConfiguration {
             TransportPolicy transport, WorkloadTokens tokens, Clock clock) {
         return new HttpIngestionScopeAuthority(client(settings), transport, settings.baseUri(),
                 () -> tokens.issue("ingestion", HttpIngestionScopeAuthority.ROLE), limits.maxResponseBytes(), clock);
+    }
+
+    @Bean
+    CaptureScopeSync captureScopeSync(IngestionClientProperties settings, TransportPolicy transport,
+            WorkloadTokens tokens, Clock clock) {
+        return new HttpCaptureScopeSync(client(settings), transport, settings.baseUri(),
+                () -> tokens.issue("ingestion", HttpCaptureScopeSync.ROLE), settings.requestTimeout(),
+                settings.maxResponseBytes(), clock);
     }
 
     private static HttpClient client(IngestionClientProperties settings) {

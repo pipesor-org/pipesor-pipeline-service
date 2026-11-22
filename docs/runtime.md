@@ -29,7 +29,8 @@ JWKS URI is not HTTPS (except loopback under `local`).
 | `PIPESOR_SIGNING_KEY_FILE` or `PIPESOR_SIGNING_KEY_ID` | workload signing key, published at `/.well-known/jwks.json` |
 | `PIPESOR_SECURITY_SESSION_JWKSURI` | Ingestion's session JWKS |
 | `PIPESOR_SECURITY_TRUSTEDWORKLOADS_<n>_ID/_JWKSURI/_ROLES` | inbound callers: `correlation` (`Correlation.OperationalReferences.Check`), `log-event` (`Evidence.Check`), `recommendation` (`Recommendation.DiagnosisEntitlements.Resolve`) |
-| `PIPESOR_ENDPOINTS_INGESTION` | Ingestion base URL (GitHub facts, machine-scope checks) |
+| `PIPESOR_ENDPOINTS_INGESTION` | Ingestion base URL (GitHub facts, machine-scope checks, capture workflow scopes) |
+| `PIPESOR_CAPTURE_SCOPE_RECONCILE_INTERVAL`, `PIPESOR_CAPTURE_SCOPE_RECONCILE_ENABLED` | capture scope reconciliation (ADR-023): default `5m` (minimum 10 s) and `true`; tests disable it |
 | `PIPESOR_DATABASE_URL`, `_USERNAME`, `_PASSWORD` (local only) | PostgreSQL database `pipesor` |
 | `PIPESOR_SERVICE_BUS_CONNECTION_STRING` (local) or `_NAMESPACE`, `_TOPIC` (`workflow-evidence`), `_SUBSCRIPTION` (`pipeline`) | snapshot receiver |
 | `PIPESOR_DASHBOARD_ORIGIN` | CORS origin for `/api/v1/**` (no credentials mode) |
@@ -37,7 +38,8 @@ JWKS URI is not HTTPS (except loopback under `local`).
 
 Limits with defaults (override with Spring relaxed binding, e.g. `PIPELINE_INGESTION_REQUEST_TIMEOUT`):
 `pipeline.ingestion.*` (connect 2 s, request 5 s, 256 KiB responses, 50 repositories per verification),
-`pipeline.owner-validation.*` (3 s, 4 KiB requests, 1 KiB peer responses, 16 in flight),
+`pipeline.capture-scope.*` (`reconcile-enabled`, `reconcile-interval` 5 min, `page-size` 100; the
+first two also read the `PIPESOR_CAPTURE_SCOPE_*` variables above), `pipeline.owner-validation.*` (3 s, 4 KiB requests, 1 KiB peer responses, 16 in flight),
 `pipeline.messaging.*` (`enabled`, 256 KiB messages, concurrency 4, lock renewal 5 min, drain 30 s,
 `max-deliveries` 10). `server.tomcat.connection-timeout` is 10 s.
 
@@ -45,7 +47,8 @@ Limits with defaults (override with Spring relaxed binding, e.g. `PIPELINE_INGES
 
 `/actuator/health/liveness` and `/actuator/health/readiness` are the only actuator routes
 (no details). Readiness includes the database and, when the receiver is enabled, the Service Bus
-processor state. Flyway runs at startup on `ops` (history `ops.pipeline_flyway_schema_history`);
+processor state. It also contributes `captureScope`, which is always UP and carries the last
+reconciliation pass only as an internal detail: an unreachable Ingestion never makes Pipeline unready. Flyway runs at startup on `ops` (history `ops.pipeline_flyway_schema_history`);
 `V6` creates `audit.audit_events` and its enum if absent (Pipeline is the MVP owner of that table).
 Hibernate uses `ddl-auto: validate`.
 
@@ -120,10 +123,31 @@ holds a processing slot; `413`, `415`, `429` and `503` keep their previous meani
 |---|---|---|
 | Ingestion | `POST /internal/v1/github/access-verifications`, `POST /internal/v1/github/workflow-verifications` | workload token (`Pipeline.GitHubFacts.Read`) + the current session as `X-Pipesor-Subject-Token` |
 | Ingestion | `POST /internal/v1/capture/machine-scope-checks` | workload token (`Pipeline.MachineScope.Check`) |
+| Ingestion | `PUT /internal/v1/capture/workflow-scopes/{githubRepositoryId}/{githubWorkflowId}` | workload token (`Pipeline.CaptureScope.Write`), no subject token |
 
 GitHub verification maps Ingestion `409` to `GITHUB_CONNECTION_REQUIRED`, `403` to denial and any
 other failure, timeout or binding mismatch to 503. Selections larger than the batch size are split;
 an empty selection discloses nothing and is not sent. Results are reused only within one request.
+
+### Capture workflow scopes (ADR-023)
+
+Pipeline drives Ingestion's capture scope for each registered workflow with
+`{"requestId", "correlationId", "pipelineId", "monitoringStatus": "ACTIVE|PAUSED"}` and
+`X-Correlation-ID`. A `200` must echo `repositoryId`, `workflowId`, `pipelineId` and `status` and carry
+`scopeRevision` and `revision`; otherwise the result is invalid. `404 REPOSITORY_NOT_ADMITTED`,
+`409 PIPELINE_MISMATCH`, `400`, `401/403`, `5xx`, timeouts and oversized responses each map to a
+named outcome and are logged with a fixed reason and the correlation id, never with payloads or tokens.
+Redirects are not followed; the timeout and response limit are `pipeline.ingestion.request-timeout`
+and `max-response-bytes`.
+
+- After `POST /api/v1/pipelines` commits, and after a settings/policy update commits with a changed
+  `monitoringStatus`, the committed status is sent outside the SQL transaction. A failed sync never
+  fails or rolls back the committed response; it is logged and left to reconciliation.
+- Reconciliation runs at application readiness and then every `reconcile-interval` (fixed delay, one
+  pass at a time per instance). It reads all pipelines in pages of `page-size` (each page its own short
+  read) and repeats each current status. The PUT is idempotent, so replicas running concurrently
+  converge. A pass stops at the first unavailable outcome and the next pass starts over; rejections
+  such as `REPOSITORY_NOT_ADMITTED` are counted and the pass continues.
 
 ## Snapshot receiver
 
