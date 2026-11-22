@@ -85,6 +85,9 @@ class IncidentQueueAndEntitlementTests extends PostgresIntegrationTest {
         assertThat(first.get("items")).hasSize(2);
         assertThat(first.get("items").get(0).get("id").asString()).isEqualTo(visibleIncidents.get(2).toString());
         assertThat(first.get("items").get(0).get("pipelineId").asString()).isEqualTo(visible.toString());
+        // Display numbers come from the database sequence in creation order and never repeat.
+        assertThat(first.get("items").get(0).get("displayNumber").asLong())
+                .isGreaterThan(first.get("items").get(1).get("displayNumber").asLong()).isGreaterThan(1000L);
         String token = first.get("nextPageToken").asString();
         var second = JSON.readTree(client.get().uri("/api/v1/incidents?state=OPEN&pageSize=2&pageToken=" + token)
                 .header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isOk()

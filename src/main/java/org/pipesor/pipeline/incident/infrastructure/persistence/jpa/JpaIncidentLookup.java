@@ -38,7 +38,7 @@ public class JpaIncidentLookup implements IncidentLookup {
     }
 
     private IncidentView view(IncidentJpaEntity entity) {
-        return new IncidentView(entity.getId(), entity.pipelineId, entity.status, entity.severity, entity.stage, entity.summary, entity.assigneeRef, entity.assigneeDisplayNameSnapshot, entity.detectedAt, entity.remediationStartedAt, entity.verificationStartedAt, entity.resolvedAt, entity.correlationId, entity.getCreatedAt());
+        return new IncidentView(entity.getId(), entity.pipelineId, entity.status, entity.severity, entity.stage, entity.summary, entity.assigneeRef, entity.assigneeDisplayNameSnapshot, entity.detectedAt, entity.remediationStartedAt, entity.verificationStartedAt, entity.resolvedAt, entity.correlationId, entity.getCreatedAt(), entity.displayNumber);
     }
 
     @Override
