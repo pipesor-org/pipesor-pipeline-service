@@ -1,7 +1,9 @@
 """Check the packaged image using disposable local Docker resources, never Azure."""
 
+import io
 import subprocess
 import sys
+import tarfile
 import time
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
@@ -9,7 +11,21 @@ from uuid import uuid4
 
 
 def docker(*args, **kwargs):
-    return subprocess.run(["docker", *args], text=True, capture_output=True, check=True, **kwargs).stdout.strip()
+    text = not isinstance(kwargs.get("input"), bytes)
+    output = subprocess.run(["docker", *args], text=text, capture_output=True, check=True, **kwargs).stdout
+    return output.strip() if text else output
+
+
+def signing_key_archive():
+    """A disposable PKCS#8 key owned by the image user with mode 0600, as a tar stream for docker cp."""
+    pem = subprocess.run(["openssl", "genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:2048"],
+                         capture_output=True, check=True).stdout
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode="w") as archive:
+        entry = tarfile.TarInfo("pipeline.pem")
+        entry.size, entry.mode, entry.uid, entry.gid = len(pem), 0o600, 10001, 10001
+        archive.addfile(entry, io.BytesIO(pem))
+    return buffer.getvalue()
 
 
 def main(image):
@@ -20,7 +36,7 @@ def main(image):
         assert docker("image", "inspect", image, "--format", "{{.Config.User}}") == "10001:10001"
         failed = subprocess.run(["docker", "run", "--rm", "--name", missing, "--network", "none", image],
                                 capture_output=True, text=True, timeout=60)
-        assert failed.returncode != 0 and "Failed to configure a DataSource" in failed.stdout + failed.stderr
+        assert failed.returncode != 0, "Startup without runtime configuration must fail"
         docker("network", "create", name)
         docker("run", "--detach", "--name", database, "--network", name,
                "--env", "POSTGRES_DB=pipeline", "--env", "POSTGRES_USER=pipeline",
@@ -33,13 +49,22 @@ def main(image):
             time.sleep(1)
         else:
             raise RuntimeError("Disposable PostgreSQL did not become ready")
-        # This shared-schema fixture is test setup, outside service migration ownership.
-        with open("src/test/resources/db/shared-audit.sql") as fixture:
-            docker("exec", "-i", database, "psql", "-v", "ON_ERROR_STOP=1", "-U", "pipeline", "-d", "pipeline", input=fixture.read())
-        docker("run", "--detach", "--name", app, "--network", name, "--publish", "127.0.0.1::8080",
-               "--env", f"SPRING_DATASOURCE_URL=jdbc:postgresql://{database}:5432/pipeline",
-               "--env", "SPRING_DATASOURCE_USERNAME=pipeline", "--env", "SPRING_DATASOURCE_PASSWORD=local-check-only",
-               image, "--spring.profiles.active=local", "--springdoc.api-docs.enabled=false", "--springdoc.swagger-ui.enabled=false")
+        # Synthetic local platform settings; peers are never contacted by this check.
+        environment = {
+            "SPRING_PROFILES_ACTIVE": "local",
+            "PIPESOR_DATABASE_URL": f"jdbc:postgresql://{database}:5432/pipeline",
+            "PIPESOR_DATABASE_USERNAME": "pipeline", "PIPESOR_DATABASE_PASSWORD": "local-check-only",
+            "PIPESOR_TENANT_ID": "24c96be0-50f3-4064-b5e4-643088141ae8", "PIPESOR_WORKLOAD_ID": "pipeline",
+            "PIPESOR_SIGNING_KEY_FILE": "/tmp/pipeline.pem", "PIPESOR_SECURITY_AUDIENCE": "urn:pipesor:api:pipeline",
+            "PIPESOR_SECURITY_SESSION_JWKSURI": "http://127.0.0.1:8081/.well-known/jwks.json",
+            "PIPESOR_ENDPOINTS_INGESTION": "http://127.0.0.1:8081", "PIPELINE_MESSAGING_ENABLED": "false",
+        }
+        arguments = ["create", "--name", app, "--network", name, "--publish", "127.0.0.1::8080"]
+        for key, value in environment.items():
+            arguments += ["--env", f"{key}={value}"]
+        docker(*arguments, image)
+        docker("cp", "-a", "-", app + ":/tmp", input=signing_key_archive())
+        docker("start", app)
         address = docker("port", app, "8080/tcp")
         for attempt in range(60):
             try:
@@ -47,7 +72,9 @@ def main(image):
                     raise RuntimeError("Unauthenticated business request unexpectedly succeeded")
             except HTTPError as error:
                 assert error.code == 401, f"Unexpected HTTP status: {error.code}"
-                print("Image checks passed: nonroot Java, missing-DB rejection, PostgreSQL startup and HTTP 401")
+                with urlopen(f"http://{address}/actuator/health/readiness", timeout=2) as ready:
+                    assert ready.status == 200, f"Readiness returned {ready.status}"
+                print("Image checks passed: nonroot Java, missing-config rejection, migrations, readiness and HTTP 401")
                 return
             except (URLError, ConnectionError, TimeoutError):
                 if docker("inspect", app, "--format", "{{.State.Running}}") != "true":

@@ -20,6 +20,7 @@ import org.pipesor.pipeline.incident.application.commands.OpenIncidentCommand;
 import org.pipesor.pipeline.incident.application.services.IncidentCommandService;
 import org.pipesor.pipeline.shared.domain.model.DeterministicIds;
 import org.pipesor.pipeline.shared.domain.model.valueobjects.PipelineStage;
+import org.pipesor.pipeline.shared.security.TestIdentity;
 import org.postgresql.util.PSQLException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Import;
@@ -35,11 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /** PostgreSQL and HTTP are real; every GitHub fact comes from the explicitly configured test double. */
-@Import({ApiContractTests.SignedIdentityConfiguration.class, GitHubConnectorTestConfiguration.class})
+@Import(GitHubConnectorTestConfiguration.class)
 class WorkflowOnboardingTests extends PostgresIntegrationTest {
     private static final String ACTOR = ApiContractTests.PRINCIPAL;
-    private static final String OTHER_OID = "a6ff3f2b-3a51-442b-aea0-3ca8137b80ce";
-    private static final String OTHER = "61c97dae-b3ad-4cd8-9955-b39e21a2f80a:" + OTHER_OID;
+    private static final long OTHER_GITHUB_USER = 2002L;
+    private static final String OTHER = TestIdentity.actor(OTHER_GITHUB_USER);
     private static final String REPO = "823001";
     private static final String SECOND_REPO = "823002";
     private static final String WORKFLOW = "918001";
@@ -140,7 +141,7 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
             Callable<Attempt> second = () -> {
                 ready.countDown(); if (!ready.await(5, TimeUnit.SECONDS)) { throw new AssertionError("Missing competing registration"); }
                 var input = new HashMap<>(body(REPO, WORKFLOW)); input.put("environment", "second");
-                var result = client.post().uri("/api/v1/pipelines").header("Authorization", ApiContractTests.bearerFor(OTHER_OID)).body(input).exchange().expectBody().returnResult();
+                var result = client.post().uri("/api/v1/pipelines").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).body(input).exchange().expectBody().returnResult();
                 return new Attempt(result.getStatus().value(), OTHER, "second");
             };
             var firstFuture = workers.submit(first); var secondFuture = workers.submit(second);
@@ -155,7 +156,7 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
         }
         var created = register(SECOND_REPO, SECOND_WORKFLOW);
         var changed = new HashMap<>(body(SECOND_REPO, SECOND_WORKFLOW)); changed.put("environment", "must-not-replace");
-        client.post().uri("/api/v1/pipelines").header("Authorization", ApiContractTests.bearerFor(OTHER_OID)).body(changed).exchange().expectStatus().isEqualTo(409);
+        client.post().uri("/api/v1/pipelines").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).body(changed).exchange().expectStatus().isEqualTo(409);
         assertThat(get(created.id()).environment()).isEqualTo("dev");
         assertThat(jdbc.queryForList("SELECT principal_ref FROM ops.pipeline_access_grants WHERE pipeline_id = ?", String.class, created.id())).containsExactly(ACTOR);
     }
@@ -287,7 +288,7 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
         github.allow(OTHER, REPO, true);
         client.put().uri(path + "CONFIGURE").header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isNoContent();
         github.allow(OTHER, REPO, false);
-        client.put().uri("/api/v1/pipelines/" + pipeline.id() + "/policy").header("Authorization", ApiContractTests.bearerFor(OTHER_OID)).body(policyBody("denied")).exchange().expectStatus().isForbidden();
+        client.put().uri("/api/v1/pipelines/" + pipeline.id() + "/policy").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).body(policyBody("denied")).exchange().expectStatus().isForbidden();
         github.unlink(OTHER);
         client.delete().uri(path + "CONFIGURE").header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isNoContent();
         assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.pipeline_access_grants WHERE pipeline_id = ? AND principal_ref = ?", Integer.class, pipeline.id(), OTHER)).isZero();
@@ -397,7 +398,7 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
                 .expectBody().jsonPath("$.items[0].principalRef").isEqualTo(ACTOR).jsonPath("$.items[0].capability").isEqualTo("CONFIGURE");
         grant(pipeline.id(), OTHER, "VIEW");
         for (String resource : List.of("grants", "activities")) {
-            client.get().uri(path + "/" + resource).header("Authorization", ApiContractTests.bearerFor(OTHER_OID)).exchange().expectStatus().isForbidden();
+            client.get().uri(path + "/" + resource).header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isForbidden();
         }
         jdbc.update("""
                 INSERT INTO audit.audit_events (id, category, correlation_id, actor_ref, entity_type, entity_id, action,

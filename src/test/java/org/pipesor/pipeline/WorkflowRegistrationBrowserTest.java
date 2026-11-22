@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.pipesor.pipeline.shared.security.TestIdentity;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.web.server.servlet.context.ServletWebServerApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,8 +33,7 @@ class WorkflowRegistrationBrowserTest {
 
     @Test
     void registersInChromiumAndReadsAfterRestartOnRetainedPostgres() throws Exception {
-        try (var database = new PostgreSQLContainer(PostgresTestConfiguration.POSTGRES_IMAGE)
-                .withInitScript("db/shared-audit.sql")) {
+        try (var database = new PostgreSQLContainer(PostgresTestConfiguration.POSTGRES_IMAGE)) {
             database.start();
             try (var app = start(database)) {
                 int port = app.getWebServer().getPort();
@@ -67,12 +67,15 @@ class WorkflowRegistrationBrowserTest {
     }
 
     private static ServletWebServerApplicationContext start(PostgreSQLContainer database) {
+        var arguments = new java.util.ArrayList<>(List.of("--spring.profiles.active=local", "--server.port=0",
+                "--server.address=127.0.0.1", "--pipeline.messaging.enabled=false",
+                "--pipeline.ingestion.base-uri=http://127.0.0.1:9",
+                "--spring.datasource.url=" + database.getJdbcUrl(),
+                "--spring.datasource.username=" + database.getUsername(),
+                "--spring.datasource.password=" + database.getPassword()));
+        TestIdentity.properties().forEach((name, value) -> arguments.add("--" + name + "=" + value));
         var app = (ServletWebServerApplicationContext) new SpringApplicationBuilder(PipelineServiceApplication.class,
-                ApiContractTests.SignedIdentityConfiguration.class, GitHubConnectorTestConfiguration.class)
-                .run("--server.port=0", "--server.address=127.0.0.1", "--spring.flyway.enabled=true",
-                        "--spring.datasource.url=" + database.getJdbcUrl(),
-                        "--spring.datasource.username=" + database.getUsername(),
-                        "--spring.datasource.password=" + database.getPassword());
+                TestIdentity.Keys.class, GitHubConnectorTestConfiguration.class).run(arguments.toArray(String[]::new));
         var github = app.getBean(GitHubConnectorDouble.class);
         github.allow(ACTOR, REPOSITORY, true);
         github.workflow(ACTOR, REPOSITORY, WORKFLOW, REPOSITORY_NAME, "main", WORKFLOW_NAME, WORKFLOW_FILE);

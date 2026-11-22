@@ -1,44 +1,29 @@
 package org.pipesor.pipeline;
 
-import com.nimbusds.jose.*;
-import com.nimbusds.jose.crypto.RSASSASigner;
-import com.nimbusds.jwt.JWTClaimsSet;
-import com.nimbusds.jwt.SignedJWT;
-import java.security.KeyPair;
-import java.security.KeyPairGenerator;
-import java.security.NoSuchAlgorithmException;
-import java.security.interfaces.RSAPublicKey;
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.pipesor.pipeline.configuration.ApiSecurityConfiguration;
 import org.pipesor.pipeline.incident.application.commands.OpenIncidentCommand;
 import org.pipesor.pipeline.incident.application.services.IncidentCommandService;
 import org.pipesor.pipeline.shared.domain.model.valueobjects.PipelineStage;
+import org.pipesor.pipeline.shared.security.TestIdentity;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.*;
+import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
-import org.springframework.security.oauth2.jwt.*;
 import org.springframework.test.web.servlet.client.RestTestClient;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@Import({ApiContractTests.SignedIdentityConfiguration.class, GitHubConnectorTestConfiguration.class})
+@Import(GitHubConnectorTestConfiguration.class)
 class ApiContractTests extends PostgresIntegrationTest {
-    private static final String TENANT = "61c97dae-b3ad-4cd8-9955-b39e21a2f80a";
-    private static final String SUBJECT = "db155203-fcb8-4cb4-9597-c853f21b0235";
-    static final String PRINCIPAL = TENANT + ":" + SUBJECT;
-    private static final String ISSUER = "https://identity.example.test/tenant/v2.0";
-    private static final KeyPair KEYS = keys();
+    static final String PRINCIPAL = TestIdentity.actor(TestIdentity.GITHUB_USER);
     @Autowired IncidentCommandService incidents;
     @Autowired PlatformTransactionManager manager;
     @Autowired GitHubConnectorDouble github;
@@ -47,17 +32,6 @@ class ApiContractTests extends PostgresIntegrationTest {
     private UUID repository;
     private UUID visible;
     private UUID hidden;
-
-    @TestConfiguration(proxyBeanMethods = false)
-    static class SignedIdentityConfiguration {
-        @Bean @Primary
-        JwtDecoder signedTestDecoder() {
-            var decoder = NimbusJwtDecoder.withPublicKey((RSAPublicKey) KEYS.getPublic()).build();
-            decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(JwtValidators.createDefaultWithIssuer(ISSUER),
-                    ApiSecurityConfiguration.identityValidator(TENANT, "pipeline-api", "Pipeline.Access")));
-            return decoder;
-        }
-    }
 
     @BeforeEach
     void seed() {
@@ -93,24 +67,47 @@ class ApiContractTests extends PostgresIntegrationTest {
     }
 
     @Test
-    void verifiesSignaturesIssuerAudienceTenantLifetimeAndDelegatedScope() throws Exception {
-        client.get().uri("/api/v1/pipelines").exchange().expectStatus().isUnauthorized();
+    void acceptsOnlyPlatformSessionsWithThePipelineScope() throws Exception {
+        client.get().uri("/api/v1/pipelines").exchange().expectStatus().isUnauthorized()
+                .expectHeader().valueMatches("Cache-Control", ".*no-store.*");
+        long user = TestIdentity.GITHUB_USER;
         String[] invalid = {
-            token(KEYS, ISSUER, "pipeline-api", TENANT, SUBJECT, "Pipeline.Access", null),
-            token(keys(), ISSUER, "pipeline-api", TENANT, SUBJECT, "Pipeline.Access", Instant.now().plusSeconds(3600)),
-            token(KEYS, "https://wrong.example.test", "pipeline-api", TENANT, SUBJECT, "Pipeline.Access", Instant.now().plusSeconds(3600)),
-            token(KEYS, ISSUER, "wrong-api", TENANT, SUBJECT, "Pipeline.Access", Instant.now().plusSeconds(3600)),
-            token(KEYS, ISSUER, "pipeline-api", UUID.randomUUID().toString(), SUBJECT, "Pipeline.Access", Instant.now().plusSeconds(3600)),
-            token(KEYS, ISSUER, "pipeline-api", TENANT, SUBJECT, "Pipeline.Access", Instant.now().minusSeconds(3600)),
-            token(KEYS, ISSUER, "pipeline-api", TENANT, "not-a-uuid", "Pipeline.Access", Instant.now().plusSeconds(3600)),
-            token(KEYS, ISSUER, "pipeline-api", TENANT, SUBJECT, "Other.Scope", Instant.now().plusSeconds(3600))
+            TestIdentity.forgedSession(user),
+            TestIdentity.session(user, claims -> claims.issuer("urn:pipesor:other")),
+            TestIdentity.session(user, claims -> claims.audience(List.of("urn:pipesor:api:ingestion"))),
+            TestIdentity.session(user, claims -> claims.claim("tid", UUID.randomUUID().toString())),
+            TestIdentity.session(user, claims -> claims.expirationTime(java.util.Date.from(Instant.now().minusSeconds(120)))),
+            TestIdentity.session(user, claims -> claims.claim("oid", UUID.randomUUID().toString())),
+            TestIdentity.session(user, claims -> claims.claim("azp", UUID.randomUUID().toString())),
+            "not-a-jwt"
         };
         for (String invalidToken : invalid) {
             client.get().uri("/api/v1/pipelines").header("Authorization", "Bearer " + invalidToken)
                     .exchange().expectStatus().isUnauthorized().expectHeader().contentTypeCompatibleWith("application/problem+json")
-                    .expectBody().jsonPath("$.correlationId").isNotEmpty();
+                    .expectBody().jsonPath("$.correlationId").isNotEmpty().jsonPath("$.code").isEqualTo("UNAUTHENTICATED");
         }
-        client.get().uri("/api/v1/pipelines").header("Authorization", bearer()).exchange().expectStatus().isOk();
+        // A valid workload token, or a session without Pipeline.Access, is authenticated but forbidden.
+        client.get().uri("/api/v1/pipelines").header("Authorization", "Bearer "
+                        + TestIdentity.workload("correlation", "Correlation.OperationalReferences.Check"))
+                .exchange().expectStatus().isForbidden();
+        client.get().uri("/api/v1/pipelines").header("Authorization", "Bearer "
+                        + TestIdentity.session(user, claims -> claims.claim("scp", "Diagnosis.Read")))
+                .exchange().expectStatus().isForbidden().expectBody().jsonPath("$.code").isEqualTo("ACCESS_DENIED");
+        // A subject token is never accepted next to a human session.
+        client.get().uri("/api/v1/pipelines").header("Authorization", bearer())
+                .header("X-Pipesor-Subject-Token", TestIdentity.session(user)).exchange().expectStatus().isUnauthorized();
+        client.get().uri("/api/v1/pipelines").header("Authorization", bearer()).exchange().expectStatus().isOk()
+                .expectHeader().valueMatches("Cache-Control", ".*no-store.*");
+    }
+
+    @Test
+    void publishesOnlyHealthAndPublicKeysWithoutAuthentication() {
+        client.get().uri("/.well-known/jwks.json").exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.keys[0].kty").isEqualTo("RSA").jsonPath("$.keys[0].d").doesNotExist();
+        client.get().uri("/actuator/health/liveness").exchange().expectStatus().isOk();
+        client.get().uri("/actuator/health/readiness").exchange().expectStatus().isOk();
+        client.get().uri("/actuator/health").exchange().expectStatus().isUnauthorized();
+        client.get().uri("/actuator/env").exchange().expectStatus().isUnauthorized();
     }
 
     @Test
@@ -176,24 +173,11 @@ class ApiContractTests extends PostgresIntegrationTest {
                 incident.getId().toString())).containsExactly(PRINCIPAL, PRINCIPAL, PRINCIPAL);
     }
 
-    static String bearer() throws Exception {
-        return "Bearer " + token(KEYS, ISSUER, "pipeline-api", TENANT, SUBJECT, "Pipeline.Access", Instant.now().plusSeconds(3600));
+    static String bearer() {
+        return "Bearer " + TestIdentity.session(TestIdentity.GITHUB_USER);
     }
 
-    static String bearerFor(String subject) throws Exception {
-        return "Bearer " + token(KEYS, ISSUER, "pipeline-api", TENANT, subject, "Pipeline.Access", Instant.now().plusSeconds(3600));
-    }
-
-    private static String token(KeyPair keys, String issuer, String audience, String tenant, String oid, String scope, Instant expires) throws Exception {
-        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.RS256), new JWTClaimsSet.Builder()
-                .issuer(issuer).audience(audience).claim("tid", tenant).claim("oid", oid).claim("scp", scope)
-                .expirationTime(expires == null ? null : Date.from(expires)).build());
-        jwt.sign(new RSASSASigner(keys.getPrivate()));
-        return jwt.serialize();
-    }
-
-    private static KeyPair keys() {
-        try { var generator = KeyPairGenerator.getInstance("RSA"); generator.initialize(2048); return generator.generateKeyPair(); }
-        catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); }
+    static String bearerFor(long githubUserId) {
+        return "Bearer " + TestIdentity.session(githubUserId);
     }
 }

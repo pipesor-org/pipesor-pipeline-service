@@ -46,6 +46,7 @@ import org.pipesor.pipeline.incident.application.services.IncidentCommandService
 import org.pipesor.pipeline.incident.application.services.IncidentLifecycleService;
 import org.pipesor.pipeline.incident.application.services.IncidentQueryService;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentAction;
+import org.pipesor.pipeline.incident.domain.model.valueobjects.InvalidIncidentTransition;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentRunRole;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
 import org.pipesor.pipeline.shared.domain.model.valueobjects.PipelineStage;
@@ -302,7 +303,7 @@ class OperationalServiceTests extends PostgresIntegrationTest {
         assertThat(resolved.summary()).isEqualTo("Sanitized test failure");
         assertThat(incidents.handle(new ListIncidentRunsQuery(incident.getId(), 0, 100)))
                 .extracting(IncidentRunView::executionId).containsExactlyInAnyOrder(failedId, otherExecutionId);
-        assertThrows(IllegalStateException.class, () -> transition(incident.getId(), IncidentAction.START_REMEDIATION, null, "operator"));
+        assertThrows(InvalidIncidentTransition.class, () -> transition(incident.getId(), IncidentAction.START_REMEDIATION, null, "operator"));
         var history = jdbc.queryForList("""
                 SELECT action, actor_ref, before_state->>'status' AS old_status,
                        after_state->>'status' AS new_status, after_state->>'executionId' AS execution_id
@@ -433,7 +434,7 @@ class OperationalServiceTests extends PostgresIntegrationTest {
                 lifecycle.handle(new TransitionIncidentCommand(incident.getId(), IncidentAction.START_REMEDIATION,
                         null, "operator", "lifecycle-concurrent"));
                 return true;
-            } catch (IllegalStateException rejectedTransition) {
+            } catch (InvalidIncidentTransition rejectedTransition) {
                 return false;
             }
         };

@@ -1,0 +1,135 @@
+# Runtime: profiles, configuration and routes
+
+Sources: [runtime manifest](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/runtime-manifest.md),
+[platform identity contract v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/platform-identity-v1.md),
+[MVP HTTP API v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/mvp-http-api-v1.md).
+
+## Profiles
+
+One image; the profile only selects adapters.
+
+| Concern | `local` | `azure` |
+|---|---|---|
+| Signing key | PEM file `PIPESOR_SIGNING_KEY_FILE` (mode 0600/0400) | Key Vault key `PIPESOR_SIGNING_KEY_ID` via `DefaultAzureCredential` |
+| PostgreSQL | `PIPESOR_DATABASE_USERNAME` / `PIPESOR_DATABASE_PASSWORD` | Entra token through `com.azure:azure-identity-extensions` (`AzurePostgresqlAuthenticationPlugin`); no password |
+| Service Bus | `PIPESOR_SERVICE_BUS_CONNECTION_STRING` (emulator) | `PIPESOR_SERVICE_BUS_NAMESPACE` + `DefaultAzureCredential` |
+| Transport | plain HTTP allowed to loopback hosts only | HTTPS only |
+| OpenAPI | `/v3/api-docs`, Swagger UI | disabled |
+
+Startup fails when a required value is missing, when a file signing key, a Service Bus
+connection string or a database password is configured under `azure`, or when an outbound or
+JWKS URI is not HTTPS (except loopback under `local`).
+
+## Configuration
+
+| Variable | Use |
+|---|---|
+| `SPRING_PROFILES_ACTIVE` | `local` or `azure` |
+| `PIPESOR_TENANT_ID`, `PIPESOR_WORKLOAD_ID` (`pipeline`), `PIPESOR_SECURITY_AUDIENCE` (`urn:pipesor:api:pipeline`) | identity |
+| `PIPESOR_SIGNING_KEY_FILE` or `PIPESOR_SIGNING_KEY_ID` | workload signing key, published at `/.well-known/jwks.json` |
+| `PIPESOR_SECURITY_SESSION_JWKSURI` | Ingestion's session JWKS |
+| `PIPESOR_SECURITY_TRUSTEDWORKLOADS_<n>_ID/_JWKSURI/_ROLES` | inbound callers: `correlation` (`Correlation.OperationalReferences.Check`), `log-event` (`Evidence.Check`), `recommendation` (`Recommendation.DiagnosisEntitlements.Resolve`) |
+| `PIPESOR_ENDPOINTS_INGESTION` | Ingestion base URL (GitHub facts, machine-scope checks) |
+| `PIPESOR_DATABASE_URL`, `_USERNAME`, `_PASSWORD` (local only) | PostgreSQL database `pipesor` |
+| `PIPESOR_SERVICE_BUS_CONNECTION_STRING` (local) or `_NAMESPACE`, `_TOPIC` (`workflow-evidence`), `_SUBSCRIPTION` (`pipeline`) | snapshot receiver |
+| `PIPESOR_DASHBOARD_ORIGIN` | CORS origin for `/api/v1/**` (no credentials mode) |
+| `SERVER_ADDRESS`, `SERVER_PORT` | default `127.0.0.1:8080`; the image sets `0.0.0.0` |
+
+Limits with defaults (override with Spring relaxed binding, e.g. `PIPELINE_INGESTION_REQUEST_TIMEOUT`):
+`pipeline.ingestion.*` (connect 2 s, request 5 s, 256 KiB responses, 50 repositories per verification),
+`pipeline.owner-validation.*` (3 s, 4 KiB requests, 1 KiB peer responses, 16 in flight),
+`pipeline.messaging.*` (`enabled`, 256 KiB messages, concurrency 4, lock renewal 5 min, drain 30 s,
+`max-deliveries` 10). `server.tomcat.connection-timeout` is 10 s.
+
+## Health and migrations
+
+`/actuator/health/liveness` and `/actuator/health/readiness` are the only actuator routes
+(no details). Readiness includes the database and, when the receiver is enabled, the Service Bus
+processor state. Flyway runs at startup on `ops` (history `ops.pipeline_flyway_schema_history`);
+`V6` creates `audit.audit_events` and its enum if absent (Pipeline is the MVP owner of that table).
+Hibernate uses `ddl-auto: validate`.
+
+## Routes
+
+| Route | Caller |
+|---|---|
+| `GET /.well-known/jwks.json`, `GET /actuator/health/{liveness,readiness}` | unauthenticated |
+| `/api/v1/**` | session token with scope `Pipeline.Access`, then ADR-020 grant and current GitHub access per resource |
+| `POST /internal/v1/evidence/operational-reference-checks` | workload `correlation` with `Correlation.OperationalReferences.Check`, or workload `log-event` with `Evidence.Check` |
+| `POST /internal/v1/diagnosis-read-entitlements` | workload `recommendation` with `Recommendation.DiagnosisEntitlements.Resolve` plus `X-Pipesor-Subject-Token` |
+
+Everything else is denied. Missing or invalid tokens return 401, a valid token without the
+route's caller, role or scope returns 403; both are `application/problem+json`
+(`code` `UNAUTHENTICATED` / `ACCESS_DENIED`, `correlationId`) with `Cache-Control: no-store`.
+A subject token is accepted only next to a workload token; it is validated as a session token for
+this audience. Other errors: `400 INVALID_REQUEST`, `403 GITHUB_CONNECTION_REQUIRED`,
+`404 NOT_FOUND`, `409 CONFLICT`, `503 GITHUB_VERIFICATION_UNAVAILABLE`, `500 INTERNAL_ERROR`;
+exception messages are never returned.
+
+### Incident queue
+
+`GET /api/v1/incidents?state=OPEN|NEEDS_VALIDATION|RESOLVED&pageSize=1..100 (default 24)&pageToken=`
+
+`state` is required: `OPEN` covers `OPEN` and `IN_REMEDIATION`, `NEEDS_VALIDATION` covers
+`VERIFICATION`, `RESOLVED` covers `RESOLVED`. Candidates are incidents of pipelines on which the
+caller holds any grant and whose repository current GitHub facts keep readable and admitted; this
+filter runs in SQL before paging. Order is `createdAt` descending, then id. Response:
+`{"items": [IncidentView...], "nextPageToken": "opaque" | null}`, items identical to
+`/api/v1/pipelines/{id}/incidents`.
+
+### Diagnosis read entitlement
+
+`POST /internal/v1/diagnosis-read-entitlements` — request `{"incidentId": "uuid"}` (unknown fields
+rejected). The subject is the subject token's session (`tid:oid`), never a body field. Pipeline
+checks the subject's grant on the incident's pipeline plus current GitHub access through Ingestion
+(ADR-020), then reads the incident's single failed ORIGIN execution.
+
+`200` (`Cache-Control: no-store`):
+
+```json
+{
+  "incidentId": "uuid",
+  "pipelineId": "uuid",
+  "executionId": "uuid",
+  "githubInstallationId": "string",
+  "githubRepositoryId": "string",
+  "tenantId": "uuid",
+  "capabilities": ["VIEW"]
+}
+```
+
+`executionId` is the ORIGIN execution. `capabilities` is `["VIEW"]` or `["VIEW", "OPERATE"]`:
+the subject's effective incident capabilities after the grant and GitHub checks.
+`404 INCIDENT_NOT_FOUND` is returned both for an absent incident and for a subject without VIEW
+(including a missing GitHub connection), so existence is not revealed. `503` means GitHub
+verification is unavailable; Recommendation treats any status other than 200/403/404 as
+authority unavailable.
+
+### Operational reference check
+
+Contract unchanged from the [owner validation increment](deployment-contract.md#internal-evidence-owner-validation-v1):
+JSON request with the capture binding and deterministic ids, `X-Correlation-Id` equal to the body
+`correlationId`, response `{requestId, correlationId, decision}` with `Cache-Control: no-store`.
+The check calls Ingestion `POST /internal/v1/capture/machine-scope-checks` with a workload token
+(`Pipeline.MachineScope.Check`). The request body is read before admission, so a slow upload never
+holds a processing slot; `413`, `415`, `429` and `503` keep their previous meaning.
+
+## Outbound calls
+
+| Target | Route | Token |
+|---|---|---|
+| Ingestion | `POST /internal/v1/github/access-verifications`, `POST /internal/v1/github/workflow-verifications` | workload token (`Pipeline.GitHubFacts.Read`) + the current session as `X-Pipesor-Subject-Token` |
+| Ingestion | `POST /internal/v1/capture/machine-scope-checks` | workload token (`Pipeline.MachineScope.Check`) |
+
+GitHub verification maps Ingestion `409` to `GITHUB_CONNECTION_REQUIRED`, `403` to denial and any
+other failure, timeout or binding mismatch to 503. Selections larger than the batch size are split;
+an empty selection discloses nothing and is not sent. Results are reused only within one request.
+
+## Snapshot receiver
+
+Subscription `pipeline` of topic `workflow-evidence` (`eventType = 'execution.snapshot'`).
+`SnapshotEnvelope` checks application properties `eventType`/`schemaMajor` (1), `messageId == eventId`
+and the broker correlation id against the payload; a mismatch is dead-lettered with its reason.
+Permanent rejections are dead-lettered; `UNKNOWN_WORKFLOW` and other retryable outcomes are
+abandoned for redelivery and only become `RETRY_EXHAUSTED` at the subscription's delivery limit.
+Processor errors are logged with their exception.

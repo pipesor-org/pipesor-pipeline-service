@@ -16,7 +16,11 @@ import org.pipesor.pipeline.incident.application.queries.GetIncidentQuery;
 import org.pipesor.pipeline.incident.application.queries.IncidentRunView;
 import org.pipesor.pipeline.incident.application.queries.IncidentView;
 import org.pipesor.pipeline.incident.application.queries.ListIncidentRunsQuery;
+import org.pipesor.pipeline.incident.application.queries.ListIncidentQueueQuery;
 import org.pipesor.pipeline.incident.application.queries.ListIncidentsQuery;
+import org.pipesor.pipeline.incident.application.services.IncidentQueueService;
+import org.pipesor.pipeline.incident.interfaces.rest.resources.IncidentQueueResource;
+import org.pipesor.pipeline.incident.interfaces.rest.transform.IncidentQueuePageTokens;
 import org.pipesor.pipeline.incident.application.services.IncidentLifecycleService;
 import org.pipesor.pipeline.incident.application.services.IncidentQueryService;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentAction;
@@ -36,9 +40,11 @@ public class IncidentController {
     private final IncidentLifecycleService commands;
     private final HumanPipelineAccess access;
     private final ExecutionQueryService executions;
+    private final IncidentQueueService queue;
 
-    public IncidentController(IncidentQueryService queries, IncidentLifecycleService commands, HumanPipelineAccess access, ExecutionQueryService executions) {
-        this.queries = queries; this.commands = commands; this.access = access; this.executions = executions;
+    public IncidentController(IncidentQueryService queries, IncidentLifecycleService commands, HumanPipelineAccess access,
+            ExecutionQueryService executions, IncidentQueueService queue) {
+        this.queries = queries; this.commands = commands; this.access = access; this.executions = executions; this.queue = queue;
     }
 
     @GetMapping("/pipelines/{id}/incidents")
@@ -48,6 +54,17 @@ public class IncidentController {
             @RequestParam(defaultValue = "25") int limit) {
         access.require(RequestContext.actor(jwt), id, AccessCapability.VIEW);
         return new PageResource<>(queries.handle(new ListIncidentsQuery(id, offset, limit)), offset, limit);
+    }
+
+    @GetMapping("/incidents")
+    public IncidentQueueResource queue(@AuthenticationPrincipal Jwt jwt,
+            @Parameter(required = true) @RequestParam ListIncidentQueueQuery.State state,
+            @Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100", defaultValue = "24"))
+            @RequestParam(defaultValue = "24") int pageSize,
+            @Parameter(description = "Opaque token from nextPageToken") @RequestParam(required = false) String pageToken) {
+        var page = queue.handle(new ListIncidentQueueQuery(RequestContext.actor(jwt), state, pageSize,
+                IncidentQueuePageTokens.decode(pageToken)));
+        return new IncidentQueueResource(page.items(), IncidentQueuePageTokens.encode(page.next()));
     }
 
     @GetMapping("/incidents/{id}")

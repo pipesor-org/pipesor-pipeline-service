@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 import org.pipesor.pipeline.execution.application.commands.ApplyExecutionSnapshotCommand;
 import org.pipesor.pipeline.execution.application.ports.SnapshotStore;
 import org.pipesor.pipeline.execution.application.services.ExecutionSnapshotService;
+import org.pipesor.pipeline.execution.application.services.SnapshotDeferred;
 import org.pipesor.pipeline.execution.application.services.SnapshotRejected;
 import org.pipesor.pipeline.execution.domain.model.valueobjects.ExecutionOutcome;
 import org.pipesor.pipeline.incident.application.ports.IncidentStore;
@@ -36,7 +37,7 @@ public final class ApplyExecutionSnapshotCommandHandler implements ExecutionSnap
             return "DUPLICATE";
         }
         var registration = store.lockPipeline(event.pipeline().githubRepositoryId(), event.pipeline().githubWorkflowId())
-                .orElseThrow(() -> new SnapshotRejected("UNKNOWN_WORKFLOW"));
+                .orElseThrow(() -> new SnapshotDeferred("UNKNOWN_WORKFLOW"));
         String disposition = "APPLIED";
         if (!registration.active()) {
             disposition = "IGNORED_PAUSED";

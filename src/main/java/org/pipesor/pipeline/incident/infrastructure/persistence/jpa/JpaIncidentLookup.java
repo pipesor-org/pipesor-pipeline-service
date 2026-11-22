@@ -3,10 +3,14 @@ package org.pipesor.pipeline.incident.infrastructure.persistence.jpa;
 import jakarta.persistence.EntityManager;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.pipesor.pipeline.incident.application.ports.IncidentLookup;
 import org.pipesor.pipeline.incident.application.queries.IncidentRunView;
 import org.pipesor.pipeline.incident.application.queries.IncidentView;
+import org.pipesor.pipeline.incident.application.queries.ListIncidentQueueQuery;
+import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentRunRole;
+import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +39,42 @@ public class JpaIncidentLookup implements IncidentLookup {
 
     private IncidentView view(IncidentJpaEntity entity) {
         return new IncidentView(entity.getId(), entity.pipelineId, entity.status, entity.severity, entity.stage, entity.summary, entity.assigneeRef, entity.assigneeDisplayNameSnapshot, entity.detectedAt, entity.remediationStartedAt, entity.verificationStartedAt, entity.resolvedAt, entity.correlationId, entity.getCreatedAt());
+    }
+
+    @Override
+    @SuppressWarnings("unchecked")
+    public List<IncidentView> queue(String actorRef, Set<String> githubRepositoryIds, Set<IncidentStatus> statuses,
+                                    ListIncidentQueueQuery.Cursor after, int limit) {
+        if (githubRepositoryIds.isEmpty() || statuses.isEmpty()) { return List.of(); }
+        var query = em.createNativeQuery("""
+                SELECT i.* FROM ops.incidents i
+                JOIN ops.pipelines p ON p.id = i.pipeline_id
+                JOIN ops.repositories r ON r.id = p.repository_id
+                WHERE r.github_repository_id IN (:repositories)
+                  AND i.status::text IN (:statuses)
+                  AND EXISTS (SELECT 1 FROM ops.pipeline_access_grants g
+                              WHERE g.pipeline_id = p.id AND g.principal_ref = :actor)
+                """ + (after == null ? "" : "  AND (i.created_at, i.id) < (:createdAt, :id)\n") + """
+                ORDER BY i.created_at DESC, i.id DESC
+                LIMIT :limit
+                """, IncidentJpaEntity.class)
+                .setParameter("repositories", githubRepositoryIds)
+                .setParameter("statuses", statuses.stream().map(Enum::name).toList())
+                .setParameter("actor", actorRef)
+                .setParameter("limit", limit);
+        if (after != null) {
+            query.setParameter("createdAt", after.createdAt()).setParameter("id", after.id());
+        }
+        return ((List<IncidentJpaEntity>) query.getResultList()).stream().map(this::view).toList();
+    }
+
+    @Override
+    public Optional<UUID> originExecution(UUID incidentId) {
+        return em.createQuery("""
+                select r.executionId from IncidentRunJpaEntity r
+                where r.incidentId = :id and r.role = :role
+                """, UUID.class).setParameter("id", incidentId).setParameter("role", IncidentRunRole.ORIGIN)
+                .getResultStream().findFirst();
     }
 
     @Override

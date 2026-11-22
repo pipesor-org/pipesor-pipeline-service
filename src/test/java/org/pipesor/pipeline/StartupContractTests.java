@@ -1,12 +1,12 @@
 package org.pipesor.pipeline;
 
+import java.util.ArrayList;
 import org.flywaydb.core.Flyway;
-import org.hibernate.tool.schema.spi.SchemaManagementException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.boot.WebApplicationType;
+import org.pipesor.pipeline.shared.security.TestIdentity;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,72 +14,66 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+/** Unmodified startup: Flyway migrates ops and creates audit.audit_events if absent; Hibernate only validates. */
 class StartupContractTests {
-
-    private static final PostgreSQLContainer POSTGRES =
-            new PostgreSQLContainer(PostgresTestConfiguration.POSTGRES_IMAGE);
+    private static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer(PostgresTestConfiguration.POSTGRES_IMAGE);
     private static JdbcTemplate jdbc;
 
     @BeforeAll
     static void startDisposableDatabase() {
         POSTGRES.start();
-        jdbc = new JdbcTemplate(new DriverManagerDataSource(
-                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
+        jdbc = new JdbcTemplate(new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()));
     }
 
     @AfterAll
-    static void stopDisposableDatabase() {
-        POSTGRES.stop();
-    }
+    static void stopDisposableDatabase() { POSTGRES.stop(); }
 
     @BeforeEach
-    void resetOnlyTheDisposableSchema() {
+    void resetOnlyTheDisposableSchemas() {
         jdbc.execute("DROP SCHEMA IF EXISTS ops CASCADE");
+        jdbc.execute("DROP SCHEMA IF EXISTS audit CASCADE");
     }
 
     @Test
-    void defaultStartupRejectsAnEmptySchemaWithoutCreatingTables() {
-        assertThatThrownBy(() -> {
-            try (var ignored = start("")) {
-                // Close the context even if a regression unexpectedly permits startup.
-            }
-        }).hasRootCauseInstanceOf(SchemaManagementException.class);
-
-        assertThat(jdbc.queryForList("""
-                SELECT table_name FROM information_schema.tables WHERE table_schema = 'ops'
-                """, String.class)).isEmpty();
-    }
-
-    @Test
-    void defaultStartupUsesAnExistingSchemaWithHibernateValidationOnly() {
-        Flyway.configure().dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
-                .defaultSchema("ops").schemas("ops").table("pipeline_flyway_schema_history")
-                .load().migrate();
-
-        try (var context = start("")) {
-            assertThat(context.isActive()).isTrue();
-            assertThat(context.getEnvironment().getProperty("spring.flyway.enabled", Boolean.class)).isFalse();
+    void startupMigratesAnEmptyDatabaseIncludingTheAuditTable() {
+        try (var context = start("local")) {
             assertThat(context.getEnvironment().getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.repositories", Integer.class)).isZero();
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM audit.audit_events", Integer.class)).isZero();
+            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("6");
         }
     }
 
     @Test
-    void localStartupMigratesAnEmptyDatabase() {
+    void keepsAnAuditTableProvisionedBeforePipeline() {
+        jdbc.execute("CREATE SCHEMA audit");
+        jdbc.execute("CREATE TYPE audit.\"AuditCategory\" AS ENUM ('diagnostic_generation', 'evidence_usage', 'human_review', 'access_and_governance_events')");
+        jdbc.execute("""
+                CREATE TABLE audit.audit_events (id uuid PRIMARY KEY NOT NULL, category audit."AuditCategory" NOT NULL,
+                    correlation_id text NOT NULL, actor_ref text, entity_type text NOT NULL, entity_id text NOT NULL,
+                    action text NOT NULL, before_state jsonb, after_state jsonb, occurred_at timestamptz NOT NULL,
+                    created_at timestamptz NOT NULL)
+                """);
+        jdbc.update("""
+                INSERT INTO audit.audit_events (id, category, correlation_id, entity_type, entity_id, action, occurred_at, created_at)
+                VALUES (gen_random_uuid(), 'human_review', 'kept', 'pipeline', 'x', 'kept', now(), now())
+                """);
         try (var context = start("local")) {
-            assertThat(context.isActive()).isTrue();
-            assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.repositories", Integer.class)).isZero();
-            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("5");
+            assertThat(jdbc.queryForObject("SELECT count(*) FROM audit.audit_events", Integer.class)).isOne();
         }
     }
 
     private ConfigurableApplicationContext start(String profile) {
-        return new SpringApplicationBuilder(PipelineServiceApplication.class)
-                .web(WebApplicationType.NONE)
-                .run("--spring.profiles.active=" + profile,
-                        "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
-                        "--spring.datasource.username=" + POSTGRES.getUsername(),
-                        "--spring.datasource.password=" + POSTGRES.getPassword());
+        var arguments = new ArrayList<String>();
+        arguments.add("--spring.profiles.active=" + profile);
+        arguments.add("--server.port=0");
+        arguments.add("--pipeline.messaging.enabled=false");
+        arguments.add("--pipeline.ingestion.base-uri=http://127.0.0.1:9");
+        arguments.add("--spring.datasource.url=" + POSTGRES.getJdbcUrl());
+        arguments.add("--spring.datasource.username=" + POSTGRES.getUsername());
+        arguments.add("--spring.datasource.password=" + POSTGRES.getPassword());
+        TestIdentity.properties().forEach((name, value) -> arguments.add("--" + name + "=" + value));
+        return new SpringApplicationBuilder(PipelineServiceApplication.class).run(arguments.toArray(String[]::new));
     }
 }
