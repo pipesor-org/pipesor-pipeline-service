@@ -6,6 +6,7 @@ import com.azure.messaging.servicebus.ServiceBusReceivedMessageContext;
 import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.pipesor.pipeline.execution.application.commands.ExecutionSnapshot;
 import org.pipesor.pipeline.execution.application.services.ExecutionSnapshotService;
+import org.pipesor.pipeline.execution.application.services.SnapshotDeferred;
 import org.pipesor.pipeline.execution.application.services.SnapshotRejected;
 import org.pipesor.pipeline.execution.interfaces.messaging.ServiceBusSnapshotConsumer;
 import org.pipesor.pipeline.execution.interfaces.messaging.transform.ExecutionSnapshotTransformer;
@@ -113,7 +115,7 @@ class ExecutionSnapshotTests extends PostgresIntegrationTest {
     }
 
     @Test
-    void pausedWorkflowIsAcknowledgedWithoutWritesAndUnknownWorkflowIsPermanent() {
+    void pausedWorkflowIsAcknowledgedWithoutWritesAndUnknownWorkflowIsDeferred() {
         jdbc.update("UPDATE ops.pipelines SET monitoring_status = 'PAUSED' WHERE id = ?", PIPELINE);
         var paused = event(UUID.randomUUID(), BASE, "completed", "failure", 1);
         assertThat(apply(paused)).isEqualTo("IGNORED_PAUSED");
@@ -121,7 +123,38 @@ class ExecutionSnapshotTests extends PostgresIntegrationTest {
         assertThat(apply(paused)).isEqualTo("DUPLICATE");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.pipeline_executions WHERE pipeline_id = ?", Integer.class, PIPELINE)).isZero();
         var unknown = JSON.writeValueAsString(event(UUID.randomUUID(), BASE, "completed", "failure", 1)).replace("7001", "7002");
-        assertThat(assertThrows(SnapshotRejected.class, () -> service.handle(transform.fromJson(unknown))).getMessage()).isEqualTo("UNKNOWN_WORKFLOW");
+        assertThat(assertThrows(SnapshotDeferred.class, () -> service.handle(transform.fromJson(unknown))).getMessage()).isEqualTo("UNKNOWN_WORKFLOW");
+    }
+
+    @Test
+    void consumerAbandonsUnknownWorkflowsForRedeliveryInsteadOfDeadLettering() {
+        var consumer = new ServiceBusSnapshotConsumer(service, 262144, 10);
+        var unknown = context(JSON.writeValueAsString(event(UUID.randomUUID(), BASE, "completed", "failure", 1)).replace("7001", "7002"));
+        consumer.accept(unknown);
+        verify(unknown).abandon();
+        verify(unknown, never()).deadLetter(any());
+        verify(unknown, never()).complete();
+    }
+
+    @Test
+    void consumerDeadLettersEnvelopesThatDoNotMatchTheirSnapshot() {
+        var consumer = new ServiceBusSnapshotConsumer(service, 262144, 10);
+        var json = JSON.writeValueAsString(event(UUID.randomUUID(), BASE, "completed", "failure", 1));
+        var wrongType = context(json);
+        when(wrongType.getMessage().getApplicationProperties()).thenReturn(Map.of("eventType", "protected_workflow_evidence", "schemaMajor", 1));
+        var wrongMajor = context(json);
+        when(wrongMajor.getMessage().getApplicationProperties()).thenReturn(Map.of("eventType", "execution.snapshot", "schemaMajor", 2));
+        var wrongId = context(json);
+        when(wrongId.getMessage().getMessageId()).thenReturn(UUID.randomUUID().toString());
+        var wrongCorrelation = context(json);
+        when(wrongCorrelation.getMessage().getCorrelationId()).thenReturn("other-correlation");
+        Map.of(wrongType, "UNSUPPORTED_EVENT_TYPE", wrongMajor, "UNSUPPORTED_SCHEMA_MAJOR",
+                wrongId, "MESSAGE_ID_MISMATCH", wrongCorrelation, "CORRELATION_ID_MISMATCH").forEach((context, reason) -> {
+            consumer.accept(context);
+            verify(context).deadLetter(argThat(options -> reason.equals(options.getDeadLetterReason())));
+            verify(context, never()).complete();
+        });
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.execution_event_receipts", Integer.class)).isZero();
     }
 
     @Test
@@ -143,7 +176,7 @@ class ExecutionSnapshotTests extends PostgresIntegrationTest {
 
     @Test
     void consumerSettlesAfterCommitAndRetriesWithoutLeavingPartialState() {
-        var consumer = new ServiceBusSnapshotConsumer(service, 262144);
+        var consumer = new ServiceBusSnapshotConsumer(service, 262144, 10);
         var context = context(JSON.writeValueAsString(event(UUID.randomUUID(), BASE, "completed", "failure", 1)));
         jdbc.execute("""
                 CREATE FUNCTION ops.test_snapshot_reject() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -197,6 +230,14 @@ class ExecutionSnapshotTests extends PostgresIntegrationTest {
         when(context.getMessage()).thenReturn(message);
         when(message.getBody()).thenReturn(BinaryData.fromString(json));
         when(message.getDeliveryCount()).thenReturn(1L);
+        when(message.getApplicationProperties()).thenReturn(Map.of("eventType", "execution.snapshot", "schemaMajor", 1));
+        try {
+            var node = JSON.readTree(json);
+            when(message.getMessageId()).thenReturn(node.get("eventId").asString());
+            when(message.getCorrelationId()).thenReturn(node.get("correlationId").asString());
+        } catch (RuntimeException malformed) {
+            when(message.getMessageId()).thenReturn(UUID.randomUUID().toString());
+        }
         return context;
     }
 

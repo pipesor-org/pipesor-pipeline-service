@@ -1,54 +1,73 @@
 package org.pipesor.pipeline.configuration;
 
-import com.azure.identity.ManagedIdentityCredentialBuilder;
+import com.azure.identity.DefaultAzureCredentialBuilder;
 import com.azure.messaging.servicebus.ServiceBusClientBuilder;
+import com.azure.messaging.servicebus.ServiceBusErrorContext;
 import com.azure.messaging.servicebus.ServiceBusProcessorClient;
-import java.time.Duration;
 import org.pipesor.pipeline.execution.application.services.ExecutionSnapshotService;
 import org.pipesor.pipeline.execution.interfaces.messaging.ServiceBusSnapshotConsumer;
-import org.springframework.beans.factory.annotation.Value;
+import org.pipesor.pipeline.shared.security.TransportPolicy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.HealthIndicator;
 import org.springframework.context.SmartLifecycle;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+/**
+ * Receives {@code execution.snapshot} from the {@code workflow-evidence} topic. The connection is
+ * selected by configuration: an emulator connection string under the {@code local} profile, or the
+ * namespace with {@code DefaultAzureCredential} (managed identity) under {@code azure}.
+ */
 @Configuration(proxyBeanMethods = false)
 @ConditionalOnProperty(name = "pipeline.messaging.enabled", havingValue = "true")
+@EnableConfigurationProperties({ServiceBusProperties.class, MessagingProperties.class})
 public class ServiceBusConfiguration {
+    private static final Logger LOG = LoggerFactory.getLogger(ServiceBusConfiguration.class);
+
     @Bean
-    SmartLifecycle executionReceiver(ExecutionSnapshotService service, JdbcTemplate jdbc,
-            @Value("${pipeline.messaging.namespace}") String namespace,
-            @Value("${pipeline.messaging.topic}") String topic,
-            @Value("${pipeline.messaging.subscription}") String subscription,
-            @Value("${pipeline.messaging.max-message-bytes}") int maxMessageBytes,
-            @Value("${pipeline.messaging.concurrency}") int concurrency,
-            @Value("${pipeline.messaging.lock-renewal-seconds}") long lockRenewalSeconds,
-            @Value("${pipeline.messaging.drain-seconds}") long drainSeconds) {
-        if (namespace.isBlank() || topic.isBlank() || subscription.isBlank() || concurrency < 1 || lockRenewalSeconds < 0 || drainSeconds < 1) {
-            throw new IllegalArgumentException("Complete namespace/topic/subscription and valid delivery limits required");
-        }
+    ReceiverLifecycle executionReceiver(ExecutionSnapshotService service, JdbcTemplate jdbc, ServiceBusProperties bus,
+            MessagingProperties limits, TransportPolicy transport) {
         jdbc.queryForList("SELECT event_id, message_digest, content_digest, source_updated_at, source_submicro_nanos, disposition FROM ops.execution_event_receipts LIMIT 0");
-        var consumer = new ServiceBusSnapshotConsumer(service, maxMessageBytes);
-        var processor = new ServiceBusClientBuilder()
-                .credential(namespace, new ManagedIdentityCredentialBuilder().build())
-                .processor().topicName(topic).subscriptionName(subscription)
-                .disableAutoComplete().prefetchCount(0).maxConcurrentCalls(concurrency)
-                .maxAutoLockRenewDuration(Duration.ofSeconds(lockRenewalSeconds))
-                .drainTimeout(Duration.ofSeconds(drainSeconds))
+        var consumer = new ServiceBusSnapshotConsumer(service, limits.maxMessageBytes(), limits.maxDeliveries());
+        var builder = new ServiceBusClientBuilder();
+        if (bus.usesConnectionString()) {
+            if (!transport.loopbackHttpAllowed()) {
+                throw new IllegalStateException("A Service Bus connection string is allowed only under the local profile");
+            }
+            builder.connectionString(bus.connectionString());
+        } else {
+            builder.credential(bus.namespace(), new DefaultAzureCredentialBuilder().build());
+        }
+        var processor = builder.processor().topicName(bus.topic()).subscriptionName(bus.subscription())
+                .disableAutoComplete().prefetchCount(0).maxConcurrentCalls(limits.concurrency())
+                .maxAutoLockRenewDuration(limits.lockRenewal()).drainTimeout(limits.drainTimeout())
                 .processMessage(consumer::accept)
-                .processError(error -> System.getLogger(ServiceBusConfiguration.class.getName())
-                        .log(System.Logger.Level.WARNING, "Service Bus receive failure: {0}", error.getErrorSource()))
+                .processError(ServiceBusConfiguration::logError)
                 .buildProcessorClient();
         return new ReceiverLifecycle(processor);
     }
 
-    private static final class ReceiverLifecycle implements SmartLifecycle {
+    @Bean
+    HealthIndicator serviceBus(ReceiverLifecycle receiver) {
+        return () -> receiver.isRunning() && receiver.client.isRunning() ? Health.up().build() : Health.down().build();
+    }
+
+    private static void logError(ServiceBusErrorContext error) {
+        LOG.warn("Service Bus receive failure: source={}, entity={}, type={}", error.getErrorSource(), error.getEntityPath(),
+                error.getException().getClass().getName(), error.getException());
+    }
+
+    static final class ReceiverLifecycle implements SmartLifecycle {
         private final ServiceBusProcessorClient client;
         private volatile boolean running;
         ReceiverLifecycle(ServiceBusProcessorClient client) { this.client = client; }
         @Override public void start() { client.start(); running = true; }
-        @Override public void stop() { client.close(); running = false; }
+        @Override public void stop() { running = false; client.close(); }
         @Override public boolean isRunning() { return running; }
     }
 }
