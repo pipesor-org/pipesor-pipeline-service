@@ -80,6 +80,7 @@ public final class GitHubAccessChecks {
             var repository = entry.getValue();
             if (!entry.getKey().equals(repository.repositoryId())
                     || (repository.installationId() != null && !repository.installationId().matches("[1-9][0-9]*"))
+                    || (repository.accountId() != null && !repository.accountId().matches("[1-9][0-9]*"))
                     || ((repository.readable() || repository.administrator()) && blank(repository.installationId()))) {
                 throw new GitHubVerificationUnavailable();
             }

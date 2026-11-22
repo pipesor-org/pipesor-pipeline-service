@@ -22,7 +22,14 @@ public final class HumanPipelineAccess {
         this.grants = grants; this.pipelines = pipelines; this.github = github;
     }
 
+    /** A capability confirmed by a local grant and current GitHub facts, with the repository facts used. */
+    public record Verified(PipelineView pipeline, Set<AccessCapability> capabilities, GitHubConnector.RepositoryAccess repository) {}
+
     public Set<AccessCapability> require(String actor, UUID pipeline, AccessCapability capability) {
+        return verified(actor, pipeline, capability).capabilities();
+    }
+
+    public Verified verified(String actor, UUID pipeline, AccessCapability capability) {
         var local = grants.capabilities(actor, Set.of(pipeline)).getOrDefault(pipeline, Set.of());
         if (!local.contains(capability)) { throw new SecurityException("Pipeline capability required"); }
         var resource = pipelines.findById(pipeline).orElseThrow(NoSuchElementException::new);
@@ -32,7 +39,8 @@ public final class HumanPipelineAccess {
         // The connector may take time; do not reuse a local grant revoked during that preflight.
         local = grants.capabilities(actor, Set.of(pipeline)).getOrDefault(pipeline, Set.of());
         if (!local.contains(capability)) { throw new SecurityException("Pipeline capability revoked"); }
-        return effective(local, proof.repositories().get(resource.githubRepositoryId()));
+        var repository = proof.repositories().get(resource.githubRepositoryId());
+        return new Verified(resource, effective(local, repository), repository);
     }
 
     public void eligibleRecipient(String actor, UUID pipeline, String recipient, AccessCapability capability) {
@@ -44,17 +52,32 @@ public final class HumanPipelineAccess {
 
     public List<PipelineView> list(String actor, int offset, int limit) {
         if (offset < 0 || limit < 1 || limit > 100) { throw new IllegalArgumentException("Invalid offset or limit"); }
+        var proof = visible(actor);
+        var page = pipelines.listVisible(actor, readable(proof), offset, limit);
+        var capabilities = grants.capabilities(actor, page.stream().map(PipelineView::id).collect(Collectors.toSet()));
+        return page.stream().map(row -> row.withCapabilities(effective(capabilities.getOrDefault(row.id(), Set.of()),
+                proof.repositories().get(row.githubRepositoryId())))).toList();
+    }
+
+    /**
+     * Repositories of the actor's granted pipelines that current GitHub facts keep readable and admitted.
+     * Callers filter by these repositories and by local grants before paging (ADR-020).
+     */
+    public Set<String> visibleRepositoryIds(String actor) {
+        return readable(visible(actor));
+    }
+
+    private GitHubConnector.Access visible(String actor) {
         var candidates = pipelines.candidateRepositoryIds(actor);
-        // Even an empty candidate set must distinguish unavailable verification from a valid empty list.
-        var proof = github.verify(actor, actor, candidates, GitHubConnector.Operation.VIEW);
+        return github.verify(actor, actor, candidates, GitHubConnector.Operation.VIEW);
+    }
+
+    private static Set<String> readable(GitHubConnector.Access proof) {
         var allowed = new HashSet<String>();
         proof.repositories().forEach((id, access) -> {
             if (access.admittedForTenant() && access.readable()) { allowed.add(id); }
         });
-        var page = pipelines.listVisible(actor, allowed, offset, limit);
-        var capabilities = grants.capabilities(actor, page.stream().map(PipelineView::id).collect(Collectors.toSet()));
-        return page.stream().map(row -> row.withCapabilities(effective(capabilities.getOrDefault(row.id(), Set.of()),
-                proof.repositories().get(row.githubRepositoryId())))).toList();
+        return Set.copyOf(allowed);
     }
 
     private Set<AccessCapability> effective(Set<AccessCapability> local, GitHubConnector.RepositoryAccess github) {
