@@ -14,6 +14,7 @@ import org.pipesor.pipeline.execution.domain.model.valueobjects.ExecutionOutcome
 import org.pipesor.pipeline.incident.application.ports.IncidentStore;
 import org.pipesor.pipeline.incident.domain.model.aggregates.Incident;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentDetails;
+import org.pipesor.pipeline.incident.domain.model.valueobjects.Severity;
 import org.pipesor.pipeline.shared.domain.model.DeterministicIds;
 
 public final class ApplyExecutionSnapshotCommandHandler implements ExecutionSnapshotService {
@@ -73,7 +74,8 @@ public final class ApplyExecutionSnapshotCommandHandler implements ExecutionSnap
                         var failure = event.failure();
                         var incident = Incident.fromFailedExecution(incidentId, registration.id(),
                                 new ExecutionOutcome(event.executionId(), registration.id(), true),
-                                new IncidentDetails(failure.stage(), failure.summary(), failure.detectedAt(), event.correlationId(), now));
+                                new IncidentDetails(failure.stage(), failure.summary(), failure.detectedAt(), event.correlationId(), now,
+                                        Severity.initialFor(registration.criticality())));
                         incidents.save(incident, ids.get());
                     }
                 }

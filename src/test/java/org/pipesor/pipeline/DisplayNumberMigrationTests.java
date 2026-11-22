@@ -51,6 +51,8 @@ class DisplayNumberMigrationTests {
         assertThat(jdbc.queryForObject("SELECT display_number FROM ops.incidents WHERE id = ?", Long.class, older)).isEqualTo(1001L);
         assertThat(jdbc.queryForObject("SELECT display_number FROM ops.incidents WHERE id = ?", Long.class, newer)).isEqualTo(1002L);
         assertThat(jdbc.queryForObject("SELECT nextval('ops.incident_display_number_seq')", Long.class)).isEqualTo(1003L);
+        // V8: incidents opened before the severity rule take their pipeline's criticality (HIGH here).
+        assertThat(jdbc.queryForList("SELECT severity::text FROM ops.incidents", String.class)).containsOnly("HIGH");
     }
 
     /** One incident with its required ORIGIN run, committed together so the deferred origin check passes. */

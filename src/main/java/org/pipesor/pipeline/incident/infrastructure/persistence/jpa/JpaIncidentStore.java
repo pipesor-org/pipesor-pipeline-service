@@ -39,7 +39,7 @@ public class JpaIncidentStore implements IncidentStore {
                 .setParameter("id", id).setParameter("role", IncidentRunRole.VERIFICATION)
                 .getResultList());
         var details = new IncidentDetails(
-                row.stage, row.summary, row.detectedAt, row.correlationId, row.getCreatedAt());
+                row.stage, row.summary, row.detectedAt, row.correlationId, row.getCreatedAt(), row.severity);
         var state = new IncidentLifecycle(
                 row.status, row.remediationStartedAt, row.verificationStartedAt, row.resolvedAt, ids);
         return Optional.of(Incident.restore(id, row.pipelineId,
