@@ -71,10 +71,11 @@ exception messages are never returned.
 
 ### Incident queue
 
-`GET /api/v1/incidents?state=OPEN|NEEDS_VALIDATION|RESOLVED&pageSize=1..100 (default 24)&pageToken=`
+`GET /api/v1/incidents?state=OPEN|RESOLVED&pageSize=1..100 (default 24)&pageToken=`
 
-`state` is required: `OPEN` covers `OPEN` and `IN_REMEDIATION`, `NEEDS_VALIDATION` covers
-`VERIFICATION`, `RESOLVED` covers `RESOLVED`. Candidates are incidents of pipelines on which the
+`state` is required: `OPEN` covers every active incident (`OPEN`, `IN_REMEDIATION` and
+`VERIFICATION`), `RESOLVED` covers `RESOLVED`. Diagnosis validation is not a lifecycle state: the
+dashboard's Needs validation view is the `RESOLVED` queue joined with Recommendation's review status. Candidates are incidents of pipelines on which the
 caller holds any grant and whose repository current GitHub facts keep readable and admitted; this
 filter runs in SQL before paging. Order is `createdAt` descending, then id. Response:
 `{"items": [IncidentView...], "nextPageToken": "opaque" | null}`, items identical to

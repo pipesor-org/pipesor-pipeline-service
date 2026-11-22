@@ -79,26 +79,28 @@ class IncidentQueueAndEntitlementTests extends PostgresIntegrationTest {
 
     @Test
     void queueFiltersByGrantAndCurrentGitHubAccessBeforePaging() {
-        var first = JSON.readTree(client.get().uri("/api/v1/incidents?state=OPEN&pageSize=2").header("Authorization", ApiContractTests.bearer())
+        var first = JSON.readTree(client.get().uri("/api/v1/incidents?state=OPEN&pageSize=3").header("Authorization", ApiContractTests.bearer())
                 .exchange().expectStatus().isOk().expectHeader().valueMatches("Cache-Control", ".*no-store.*")
                 .expectBody().returnResult().getResponseBodyContent());
-        assertThat(first.get("items")).hasSize(2);
-        assertThat(first.get("items").get(0).get("id").asString()).isEqualTo(visibleIncidents.get(2).toString());
+        // OPEN is every active incident, including the one in verification, newest first.
+        assertThat(first.get("items")).hasSize(3);
+        assertThat(first.get("items").get(0).get("id").asString()).isEqualTo(verificationIncident.toString());
+        assertThat(first.get("items").get(1).get("id").asString()).isEqualTo(visibleIncidents.get(2).toString());
         assertThat(first.get("items").get(0).get("pipelineId").asString()).isEqualTo(visible.toString());
         // Display numbers come from the database sequence in creation order and never repeat.
         assertThat(first.get("items").get(0).get("displayNumber").asLong())
                 .isGreaterThan(first.get("items").get(1).get("displayNumber").asLong()).isGreaterThan(1000L);
         String token = first.get("nextPageToken").asString();
-        var second = JSON.readTree(client.get().uri("/api/v1/incidents?state=OPEN&pageSize=2&pageToken=" + token)
+        var second = JSON.readTree(client.get().uri("/api/v1/incidents?state=OPEN&pageSize=3&pageToken=" + token)
                 .header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isOk()
                 .expectBody().returnResult().getResponseBodyContent());
         assertThat(second.get("items")).hasSize(1);
         assertThat(second.get("items").get(0).get("id").asString()).isEqualTo(visibleIncidents.get(0).toString());
         assertThat(second.get("nextPageToken").isNull()).isTrue();
 
+        // Diagnosis validation is owned by Recommendation, so Pipeline has no such lifecycle queue.
         client.get().uri("/api/v1/incidents?state=NEEDS_VALIDATION").header("Authorization", ApiContractTests.bearer())
-                .exchange().expectStatus().isOk().expectBody().jsonPath("$.items.length()").isEqualTo(1)
-                .jsonPath("$.items[0].id").isEqualTo(verificationIncident.toString());
+                .exchange().expectStatus().isBadRequest();
         client.get().uri("/api/v1/incidents?state=RESOLVED").header("Authorization", ApiContractTests.bearer())
                 .exchange().expectStatus().isOk().expectBody().jsonPath("$.items").isEmpty();
         client.get().uri("/api/v1/incidents?state=OPEN&pageToken=bogus").header("Authorization", ApiContractTests.bearer())
