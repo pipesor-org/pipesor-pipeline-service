@@ -70,7 +70,7 @@ class IngestionGitHubConnectorTests {
         return new IngestionGitHubConnector(HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build(),
                 new TransportPolicy(true), URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
                 () -> new WorkloadTokens.Token("workload-token", Instant.now().plusSeconds(300)), () -> session,
-                () -> "corr-github", Duration.ofSeconds(3), 65536, 2, Clock.systemUTC());
+                () -> "corr-github", Duration.ofSeconds(3), Duration.ofSeconds(5), 65536, 2, Clock.systemUTC());
     }
 
     @Test
@@ -82,6 +82,8 @@ class IngestionGitHubConnectorTests {
         assertThat(lastHeaders.get().getFirst("X-Correlation-Id")).isEqualTo("corr-github");
         assertThat(lastBody.get().get("operation").asString()).isEqualTo("VIEW");
         assertThat(lastBody.get().has("recipientObjectId")).isFalse();
+        // The facts deadline covers the 3 s exchange plus the 5 s local decision budget.
+        assertThat(Instant.parse(lastBody.get().get("deadline").asString())).isAfter(Instant.now().plusSeconds(6));
         assertThat(access.actorRef()).isEqualTo(ACTOR);
         assertThat(access.subjectRef()).isEqualTo(ACTOR);
         var repository = access.repositories().get("823001");

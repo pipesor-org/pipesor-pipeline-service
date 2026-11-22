@@ -11,14 +11,17 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties("pipeline.ingestion")
 public record IngestionClientProperties(URI baseUri, Duration connectTimeout, Duration requestTimeout,
-        int maxResponseBytes, int maxBatchSize) {
+        Duration decisionBudget, int maxResponseBytes, int maxBatchSize) {
     public IngestionClientProperties {
         Objects.requireNonNull(baseUri, "PIPESOR_ENDPOINTS_INGESTION is required");
         connectTimeout = connectTimeout == null ? Duration.ofSeconds(2) : connectTimeout;
         requestTimeout = requestTimeout == null ? Duration.ofSeconds(5) : requestTimeout;
+        decisionBudget = decisionBudget == null ? Duration.ofSeconds(5) : decisionBudget;
         maxResponseBytes = maxResponseBytes == 0 ? 262144 : maxResponseBytes;
         maxBatchSize = maxBatchSize == 0 ? 50 : maxBatchSize;
-        if (!positive(connectTimeout) || !positive(requestTimeout) || maxResponseBytes < 1 || maxBatchSize < 1) {
+        if (!positive(connectTimeout) || !positive(requestTimeout) || decisionBudget.isNegative()
+                || requestTimeout.plus(decisionBudget).compareTo(Duration.ofSeconds(15)) > 0
+                || maxResponseBytes < 1 || maxBatchSize < 1) {
             throw new IllegalArgumentException("Valid Ingestion client limits are required");
         }
     }

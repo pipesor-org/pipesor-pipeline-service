@@ -54,6 +54,8 @@ pipeline:
     base-uri: ${pipesor.endpoints.ingestion:}
     connect-timeout: 2s
     request-timeout: 5s
+    # Facts must stay valid for the local decision after the exchange; Ingestion caps validity at 15 s.
+    decision-budget: 5s
     max-response-bytes: 262144
     max-batch-size: 50
   owner-validation:

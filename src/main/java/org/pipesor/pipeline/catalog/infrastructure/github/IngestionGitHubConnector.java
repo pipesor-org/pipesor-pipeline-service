@@ -55,13 +55,14 @@ public final class IngestionGitHubConnector implements GitHubConnector {
     private final Sessions sessions;
     private final Supplier<String> correlation;
     private final Duration timeout;
+    private final Duration decisionBudget;
     private final int maxResponseBytes;
     private final int maxBatchSize;
     private final Clock clock;
 
     public IngestionGitHubConnector(HttpClient http, TransportPolicy transport, URI ingestion,
             Supplier<WorkloadTokens.Token> tokens, Sessions sessions, Supplier<String> correlation,
-            Duration timeout, int maxResponseBytes, int maxBatchSize, Clock clock) {
+            Duration timeout, Duration decisionBudget, int maxResponseBytes, int maxBatchSize, Clock clock) {
         this.http = Objects.requireNonNull(http);
         this.accessUri = transport.resolve(ingestion, ACCESS_PATH);
         this.workflowUri = transport.resolve(ingestion, WORKFLOW_PATH);
@@ -69,8 +70,10 @@ public final class IngestionGitHubConnector implements GitHubConnector {
         this.sessions = Objects.requireNonNull(sessions);
         this.correlation = Objects.requireNonNull(correlation);
         this.timeout = Objects.requireNonNull(timeout);
+        this.decisionBudget = Objects.requireNonNull(decisionBudget);
         this.clock = Objects.requireNonNull(clock);
         if (http.followRedirects() != HttpClient.Redirect.NEVER || timeout.isNegative() || timeout.isZero()
+                || decisionBudget.isNegative()
                 || maxResponseBytes < 1 || maxBatchSize < 1) {
             throw new IllegalArgumentException("A non-redirecting client, a timeout and limits are required");
         }
@@ -86,7 +89,8 @@ public final class IngestionGitHubConnector implements GitHubConnector {
     record WorkflowVerification(AccessVerification access, String repositoryId, String workflowId, String fullName,
                                 String defaultBranch, String workflowName, String workflowFile) {}
 
-    private record Call(Jwt session, String actorRef, String correlationId, Instant deadline) {}
+    /** {@code deadline} bounds the HTTP exchange; {@code decisionDeadline} is sent to Ingestion and also covers the local decision. */
+    private record Call(Jwt session, String actorRef, String correlationId, Instant deadline, Instant decisionDeadline) {}
 
     @Override
     public Access verifyAccess(AccessRequest request) {
@@ -106,7 +110,7 @@ public final class IngestionGitHubConnector implements GitHubConnector {
             String requestId = UUID.randomUUID().toString();
             body.put("requestId", requestId);
             body.put("correlationId", call.correlationId());
-            body.put("deadline", call.deadline().toString());
+            body.put("deadline", call.decisionDeadline().toString());
             body.put("operation", request.operation().name());
             if (recipient != null) body.put("recipientObjectId", recipient.toString());
             body.put("repositoryIds", batch);
@@ -124,7 +128,7 @@ public final class IngestionGitHubConnector implements GitHubConnector {
         String requestId = UUID.randomUUID().toString();
         body.put("requestId", requestId);
         body.put("correlationId", call.correlationId());
-        body.put("deadline", call.deadline().toString());
+        body.put("deadline", call.decisionDeadline().toString());
         body.put("operation", Operation.REGISTER.name());
         body.put("repositoryId", repositoryId);
         body.put("workflowId", workflowId);
@@ -138,23 +142,29 @@ public final class IngestionGitHubConnector implements GitHubConnector {
     private Call call(String actorRef) {
         var session = sessions.current().orElseThrow(() -> {
             LOG.warn("GitHub verification without a verified session: correlation={}", correlation.get());
-            return new GitHubVerificationUnavailable();
+            return new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.NO_VERIFIED_SESSION);
         });
         String sessionActor = session.getClaimAsString("tid") + ":" + session.getClaimAsString("oid");
         if (!sessionActor.equals(actorRef)) {
             LOG.warn("GitHub verification actor differs from the session subject: correlation={}", correlation.get());
-            throw new GitHubVerificationUnavailable();
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.SESSION_ACTOR_MISMATCH);
         }
-        Instant deadline = clock.instant().plus(timeout);
-        if (session.getExpiresAt() != null && session.getExpiresAt().isBefore(deadline)) deadline = session.getExpiresAt();
-        if (!deadline.isAfter(clock.instant())) throw new GitHubVerificationUnavailable();
-        return new Call(session, actorRef, correlation.get(), deadline);
+        Instant now = clock.instant();
+        Instant deadline = now.plus(timeout);
+        // Facts stay valid for the local decision that follows the exchange, not only for the exchange itself.
+        Instant decision = deadline.plus(decisionBudget);
+        if (session.getExpiresAt() != null && session.getExpiresAt().isBefore(decision)) decision = session.getExpiresAt();
+        if (decision.isBefore(deadline)) deadline = decision;
+        if (!deadline.isAfter(now)) throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.DEADLINE_EXCEEDED);
+        return new Call(session, actorRef, correlation.get(), deadline, decision);
     }
 
     private static UUID recipient(Call call, AccessRequest request) {
         boolean grant = request.operation().name().startsWith("GRANT_");
         if (!grant) {
-            if (!request.subjectRef().equals(request.actorRef())) throw new GitHubVerificationUnavailable();
+            if (!request.subjectRef().equals(request.actorRef())) {
+                throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.FACTS_BINDING_MISMATCH);
+            }
             return null;
         }
         var parts = request.subjectRef().split(":", -1);
@@ -185,16 +195,16 @@ public final class IngestionGitHubConnector implements GitHubConnector {
             if (status == 409) throw new GitHubConnectionRequired();
             if (status == 403) throw new SecurityException("GitHub access denied by Ingestion");
             LOG.warn("GitHub verification rejected: correlation={}, status={}", call.correlationId(), status);
-            throw new GitHubVerificationUnavailable();
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.CONNECTOR_REJECTED);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
-            throw new GitHubVerificationUnavailable();
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.CONNECTOR_UNREACHABLE);
         } catch (SecurityException | GitHubVerificationUnavailable expected) {
             throw expected;
         } catch (Exception failure) {
             LOG.warn("GitHub verification unavailable: correlation={}, type={}", call.correlationId(),
                     rootType(failure));
-            throw new GitHubVerificationUnavailable();
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.CONNECTOR_UNREACHABLE);
         } finally {
             if (pending != null && !pending.isDone()) pending.cancel(true);
         }
@@ -225,7 +235,7 @@ public final class IngestionGitHubConnector implements GitHubConnector {
     private Access merge(Access first, Access next) {
         if (!first.actorRef().equals(next.actorRef()) || !first.subjectRef().equals(next.subjectRef())
                 || !Objects.equals(first.githubUserId(), next.githubUserId())) {
-            throw new GitHubVerificationUnavailable();
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.FACTS_BINDING_MISMATCH);
         }
         var repositories = new HashMap<>(first.repositories());
         repositories.putAll(next.repositories());
@@ -245,7 +255,7 @@ public final class IngestionGitHubConnector implements GitHubConnector {
 
     private GitHubVerificationUnavailable unavailable(Call call, String reason) {
         LOG.warn("GitHub verification response invalid: correlation={}, reason={}", call.correlationId(), reason);
-        return new GitHubVerificationUnavailable();
+        return new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.RESPONSE_INVALID);
     }
 
     private static String rootType(Throwable failure) {

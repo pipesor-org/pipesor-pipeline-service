@@ -25,7 +25,7 @@ public class IngestionConfiguration {
             WorkloadTokens tokens, Clock clock) {
         return new IngestionGitHubConnector(client(settings), transport, settings.baseUri(),
                 () -> tokens.issue("ingestion", IngestionGitHubConnector.ROLE), SubjectTokens::currentSession,
-                IngestionConfiguration::correlation, settings.requestTimeout(), settings.maxResponseBytes(),
+                IngestionConfiguration::correlation, settings.requestTimeout(), settings.decisionBudget(), settings.maxResponseBytes(),
                 settings.maxBatchSize(), clock);
     }
 

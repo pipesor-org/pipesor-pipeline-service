@@ -38,7 +38,8 @@ public class ApiExceptionHandler {
 
     @ExceptionHandler(GitHubVerificationUnavailable.class)
     ResponseEntity<ProblemDetail> verificationUnavailable(GitHubVerificationUnavailable exception, HttpServletRequest request) {
-        LOG.warn("GitHub verification unavailable: correlation={}", correlation(request));
+        LOG.warn("GitHub verification unavailable: reason={}, correlation={}", exception.reason(), correlation(request));
+        LOG.debug("GitHub verification unavailable origin: correlation={}", correlation(request), exception);
         return problem(503, "GITHUB_VERIFICATION_UNAVAILABLE", "Current GitHub verification unavailable", request);
     }
 
