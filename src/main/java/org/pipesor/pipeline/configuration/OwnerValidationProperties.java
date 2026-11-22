@@ -1,48 +1,20 @@
 package org.pipesor.pipeline.configuration;
 
-import java.net.URI;
 import java.time.Duration;
-import java.util.UUID;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
+/** Limits of {@code POST /internal/v1/evidence/operational-reference-checks}; callers come from the route catalog. */
 @ConfigurationProperties("pipeline.owner-validation")
-public record OwnerValidationProperties(
-        URI issuer, URI jwkSetUri, String tenant, String audience, String callerClientId,
-        String callerPrincipalId, String role, Duration clockSkew, Duration requestTimeout,
-        int maxRequestBytes, int maxResponseBytes, int maxInFlight,
-        URI ingestionUri, String ingestionScope, Duration connectTimeout,
-        String correlationClientId, String correlationPrincipalId, String correlationRole) {
+public record OwnerValidationProperties(Duration requestTimeout, int maxRequestBytes, int maxResponseBytes, int maxInFlight) {
     public OwnerValidationProperties {
-        if (!https(issuer) || !https(jwkSetUri) || !https(ingestionUri)
-                || !"/internal/v1/capture/machine-scope-checks".equals(ingestionUri.getPath())
-                || !uuid(tenant) || !uuid(callerClientId) || !uuid(callerPrincipalId)
-                || audience == null || audience.isBlank() || role == null || role.isBlank()
-                || ingestionScope == null || ingestionScope.isBlank()
-                || clockSkew == null || clockSkew.isNegative()
-                || !positive(requestTimeout) || !positive(connectTimeout)
-                || maxRequestBytes < 1 || maxRequestBytes == Integer.MAX_VALUE
+        requestTimeout = requestTimeout == null ? Duration.ofSeconds(3) : requestTimeout;
+        maxRequestBytes = maxRequestBytes == 0 ? 4096 : maxRequestBytes;
+        maxResponseBytes = maxResponseBytes == 0 ? 1024 : maxResponseBytes;
+        maxInFlight = maxInFlight == 0 ? 16 : maxInFlight;
+        if (requestTimeout.isNegative() || requestTimeout.isZero() || maxRequestBytes < 1 || maxRequestBytes == Integer.MAX_VALUE
                 || maxResponseBytes < 1 || maxResponseBytes == Integer.MAX_VALUE || maxInFlight < 1) {
-            throw new IllegalArgumentException("Complete owner validation settings are required");
-        }
-        boolean correlationConfigured = correlationClientId != null || correlationPrincipalId != null || correlationRole != null;
-        if (correlationConfigured && (!uuid(correlationClientId) || !uuid(correlationPrincipalId)
-                || correlationRole == null || correlationRole.isBlank()
-                || correlationClientId.equals(callerClientId) || correlationPrincipalId.equals(callerPrincipalId)
-                || correlationRole.equals(role))) {
-            throw new IllegalArgumentException("Complete distinct Correlation caller settings are required");
+            throw new IllegalArgumentException("Valid owner validation limits are required");
         }
         requestTimeout.toNanos();
-        connectTimeout.toNanos();
     }
-
-    private static boolean positive(Duration value) { return value != null && !value.isNegative() && !value.isZero(); }
-    private static boolean uuid(String value) {
-        try { return value != null && UUID.fromString(value).toString().equals(value) && !UUID.fromString(value).equals(new UUID(0,0)); }
-        catch (RuntimeException invalid) { return false; }
-    }
-    private static boolean https(URI value) {
-        return value != null && "https".equals(value.getScheme()) && value.getHost() != null
-                && value.getUserInfo() == null && value.getQuery() == null && value.getFragment() == null;
-    }
-    @Override public String toString() { return "OwnerValidationProperties[configured]"; }
 }
