@@ -106,6 +106,13 @@ One physical PostgreSQL instance is shared; queries and commands use logical CQR
 
 ## Local persistence implementation
 
+> **Platform runtime update:** Flyway now runs at every startup and `V6` creates
+> `audit.audit_events` if absent (Pipeline is the MVP owner per the runtime manifest). Human API
+> authentication uses platform session tokens, the GitHub connector calls Ingestion, and PostgreSQL
+> uses password auth under `local` and Entra tokens under `azure`. Current inputs are in
+> [runtime.md](runtime.md); statements below about disabled Flyway, the shared-audit fixture, Entra
+> JWT settings and the unavailable connector are historical.
+
 Flyway V1–V5 create the six confirmed owned ops tables, DD-002 origin protection, technical execution_event_receipts for the approved delivery policy and the locally adopted pipeline_access_grants representation for the session-approved policy. The [current implementation and approvals](architecture.md#implemented-operational-core) distinguish source-model status from these user decisions. History remains ops.pipeline_flyway_schema_history. Hibernate validates mappings, never evolves schema; UUIDs are owner assigned and times preserve microseconds. No updated_at is inferred. The explicitly authorized registration/section/administration routes use these existing tables; this task adds no migrations or credential/link storage.
 
 Human commands require writable shared audit.audit_events in the same PostgreSQL transaction. Service migrations do not claim ownership of that shared schema. Local/test setup uses a disposable canonical-shape fixture; production shared-schema provisioning, runner, compatibility and grants remain PD-035. A missing/unwritable audit table fails the operation and rolls back business writes. JWT/principal mapping is implemented in the REST adapter using configured issuer/tenant/audience/delegated scope; missing complete configuration denies tokens, partial configuration fails startup. Signature/claim behavior is verified locally, not against live Entra metadata/JWKS.
@@ -144,6 +151,14 @@ The implementation agreement authorizes POST /api/v1/pipelines and PUT /policy a
 No GitHub runtime URL, audience, authentication secret, token environment variable or permissive local switch is introduced. A concrete owner-approved remote contract is required before replacing the unavailable connector. Existing Entra API and PostgreSQL configuration remain necessary and independent. Audited registration now supplies the initial CONFIGURE grant after verified repository administration, without preloaded Repository rows or a default administrator. Existing-pipeline grant recovery remains unimplemented pending its explicit procedure.
 
 ## Internal evidence owner validation v1
+
+> **Superseded configuration (platform runtime):** the route is now always served by a Spring MVC
+> controller behind the platform filter chain. Callers are the route catalog's `correlation`
+> (`Correlation.OperationalReferences.Check`) and `log-event` (`Evidence.Check`) workloads; the
+> Ingestion check uses a Pipeline workload token (`Pipeline.MachineScope.Check`) and
+> `PIPESOR_ENDPOINTS_INGESTION`. The Entra issuer/client/principal settings and
+> `pipeline.owner-validation.enabled` below no longer exist; limits keep their meaning. See
+> [runtime.md](runtime.md). The request/response contract below is unchanged.
 
 `/internal/v1/evidence/operational-reference-checks` is disabled unless
 `pipeline.owner-validation.enabled=true`. Explicit configuration supplies

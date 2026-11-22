@@ -4,7 +4,7 @@ Pipeline Service owns monitored workflows, executions, stages, states, metadata 
 
 The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 and local OpenAPI/Swagger UI (springdoc 3.2.0). Local code implements monitored-workflow registration, inventory/detail, independent policy/ownership updates, per-pipeline effective capabilities, grants/activity queries, operational reads, incident lifecycle and transactional audit. Human operations require both AIOps grants and current verified GitHub access under [ADR-020](docs/architecture.md#approved-github-access-evolution). Domain/application remain framework-free; JPA and SQL adapters implement persistence. The existing opt-in Service Bus consumer, deterministic IDs, delivery semantics and incident transitions are unchanged by this task.
 
-**Connector integration is blocked:** ADR-020 is integrated in pipesor-docs main, but no executable remote connector contract is available. Pipeline defines only the minimal in-process GitHubConnector port. Normal execution uses an unavailable adapter: dependent human operations fail with 503 instead of falling back to grants. There is no permissive local profile. Automated tests supply explicit test-only facts and real PostgreSQL/HTTP; they are not live GitHub/Ingestion integration. No GitHub tokens, OAuth, discovery, webhooks or GitHub HTTP client belong to Pipeline. See [current local implementation and boundaries](docs/architecture.md#adr-020-local-implementation-and-boundaries). This CI/CD increment does not change that connector integration boundary.
+**Platform runtime:** one image runs under the `local` or `azure` profile ([runtime manifest](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/runtime-manifest.md)). Inbound authentication follows the [platform identity contract v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/platform-identity-v1.md): human routes accept session tokens with `Pipeline.Access`; internal routes accept only the workload callers and roles of the route catalog. GitHub facts come from Ingestion (`/internal/v1/github/**`) with a Pipeline workload token plus the user's session token as subject token; when Ingestion is unavailable human operations fail with 503 and never fall back to grants. Pipeline holds no GitHub tokens. See [routes and configuration](docs/runtime.md).
 
 ## Documentation
 
@@ -13,6 +13,7 @@ The application targets Java 25 / Spring Boot 4.1.2 with Maven Wrapper 3.10.0 an
 - [Documentation baseline](docs/documentation-baseline.md): audited source revisions, evidence limits and adoption after merge.
 
 - [First implementation agreement](docs/architecture.md#first-implementation-agreement): package structure, handlers, persistence, identity, audit metadata and OpenAPI conventions.
+- [Runtime: profiles, configuration and routes](docs/runtime.md): environment variables, route catalog, internal contracts and health.
 - [Architecture](docs/architecture.md): service boundaries, integration context and current sources in `pipesor-docs`.
 - [Shared CI/CD guide](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/cicd.md): reusable principles, versioning, future promotion and adoption boundaries for Java, Python and SPA.
 - [Deployment contract](docs/deployment-contract.md): development baseline, service-specific delivery requirements and unresolved contracts.
@@ -44,39 +45,19 @@ The same verification includes `OperationalReferenceTests`, which checks late
 owner records, committed reference contradictions and authority-before-read
 behavior using disposable PostgreSQL and an explicit test machine authority.
 
-For an interactive local run, start a disposable PostgreSQL database (these synthetic credentials are exclusively for this local example):
+Tests boot the real application under the `local` profile with locally generated platform keys (`TestIdentity`), real PostgreSQL and real HTTP; only key discovery, the GitHub connector facts (`GitHubConnectorDouble`) and Service Bus SDK message contexts are simulated. `IngestionGitHubConnectorTests` and `OwnerValidationHttpTests` exercise the real outbound clients against loopback stand-ins.
+
+For an interactive local run use the shared stack from `pipesor-workspace` (PostgreSQL on 127.0.0.1:55432, Service Bus emulator on 5672) and its generated environment file:
 
 ```bash
-docker run --rm --name pipeline-postgres-dev \
-  --publish 127.0.0.1:5432:5432 \
-  --env POSTGRES_DB=pipeline_dev \
-  --env POSTGRES_USER=pipeline_dev \
-  --env POSTGRES_PASSWORD=pipeline_dev \
-  postgres@sha256:748a18a54d3842d43bc156f0840d78029b8d349e0feca98c12b9c4ce3404a6b3
+./mvnw -B -ntp package -DskipTests
+set -a; . ~/.config/pipesor-local/env/pipeline.env; set +a
+./mvnw -B -ntp spring-boot:run
+curl -s http://127.0.0.1:8082/actuator/health/readiness
+curl -s http://127.0.0.1:8082/.well-known/jwks.json
 ```
 
-Wait for PostgreSQL to report that it accepts connections. Initialize the shared audit schema once in this disposable database using the canonical-shape test fixture (this is separate from service Flyway ownership):
-
-```bash
-docker exec -i pipeline-postgres-dev psql -U pipeline_dev -d pipeline_dev < src/test/resources/db/shared-audit.sql
-```
-
-Then supply that database connection and start the packaged application:
-
-```bash
-SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/pipeline_dev \
-SPRING_DATASOURCE_USERNAME=pipeline_dev \
-SPRING_DATASOURCE_PASSWORD=pipeline_dev \
-java -jar target/pipesor-pipeline-service-0.0.1-SNAPSHOT.jar --spring.profiles.active=local --server.port=0
-```
-
-The local profile applies migrations to this development database and enables API documentation. Use it only with a disposable development target. Without the local profile, Flyway and documentation are disabled; Hibernate still validates the schema, so startup requires an existing compatible database. No credentials or database target default is embedded in application configuration.
-
-Read the assigned HTTP port in the `Tomcat started on port` log entry. OpenAPI: `http://127.0.0.1:<port>/v3/api-docs`; Swagger UI: `http://127.0.0.1:<port>/swagger-ui/index.html`. The specification documents the implemented business paths, bearer authentication, typed resources and errors. HTTP binds to `127.0.0.1`; these settings are local development choices, not an approved ACA runtime/access contract. Internal query and command services are composed by CatalogConfiguration, OperationsConfiguration and GitHubAccessConfiguration. The REST adapter obtains actor references exclusively from validated Entra claims; internal application entry points remain trusted calls. There is no public actor header/body or bootstrap permission endpoint; registration grants CONFIGURE to its verified creator in the same transaction.
-
-To configure human API authentication, supply PIPELINE_SECURITY_ISSUER, PIPELINE_SECURITY_TENANT, PIPELINE_SECURITY_AUDIENCE and PIPELINE_SECURITY_SCOPE together. Issuer must use HTTPS; tenant is the expected UUID; scope is the required delegated permission in scp. These are environment-specific nonsecret identifiers, not values supplied by a request. With all four absent every business token is rejected; partial configuration fails startup. Functional per-pipeline grants are still required after successful authentication. Grants use canonical tenantUUID:objectUUID references. POST /api/v1/pipelines accepts selected external IDs and AIOps configuration, verifies repository/workflow metadata and effective administration via the connector, then creates/reuses Repository and creates Pipeline, initial CONFIGURE and audit atomically. It does not require a preloaded repository. Duplicate registration returns 409 without changing settings or granting access. With the remote adapter pending, that registration path is executable in the automated local tests, not as a working GitHub connection in normal runtime. Existing pipelines without a remaining eligible CONFIGURE holder have no automatic grant recovery.
-
-Service Bus is off by default. Activating it requires PIPELINE_MESSAGING_ENABLED=true plus PIPELINE_MESSAGING_NAMESPACE, PIPELINE_MESSAGING_TOPIC, PIPELINE_MESSAGING_SUBSCRIPTION, PIPELINE_MESSAGING_MAX_MESSAGE_BYTES, PIPELINE_MESSAGING_CONCURRENCY, PIPELINE_MESSAGING_LOCK_RENEWAL_SECONDS and PIPELINE_MESSAGING_DRAIN_SECONDS. The namespace is its fully qualified host. Delivery limits must be positive (renewal may be zero); the subscription must support peek-lock delivery/maxDeliveryCount=10 and the application identity must have scoped receive/settlement rights. The adapter uses system-assigned managed identity and creates no broker entities. Do not enable it against a real target without its integration authorization and readiness agreement. Local verification never requires these settings or Azure credentials.
+Flyway migrates `ops` (history `ops.pipeline_flyway_schema_history`) and creates `audit.audit_events` if absent at every startup; Hibernate only validates. The `local` profile additionally enables OpenAPI at `/v3/api-docs` and Swagger UI. Configuration, routes and profile differences are listed in [docs/runtime.md](docs/runtime.md).
 
 The frontend-facing pipeline responses consistently include repositoryId, githubRepositoryId, fullName, defaultBranch, workflow identity/name/file, operational settings, team references, createdAt and the current user's effectiveCapabilities. VIEW requires GitHub read; OPERATE requires read; CONFIGURE requires administration. CONFIGURE and OPERATE each imply VIEW but remain independent. Registration creates CONFIGURE, not OPERATE. Stored grants never override lost GitHub access, including historical child resources.
 
@@ -84,6 +65,7 @@ The frontend-facing pipeline responses consistently include repositoryId, github
 |---|---|
 | POST /api/v1/pipelines | Verified linked identity, tenant-admitted installation, effective read and repository administration; 201 with Location. Metadata comes from the connector, not frontend names/paths. |
 | GET /api/v1/pipelines; GET /api/v1/pipelines/{id} | AIOps VIEW plus current GitHub read; repository eligibility and grants are combined before pagination. |
+| GET /api/v1/incidents?state=OPEN\|NEEDS_VALIDATION\|RESOLVED&pageSize&pageToken | Cross-pipeline queue, newest first, filtered by grants and current GitHub read before paging. Items match `/pipelines/{id}/incidents`; response `{items, nextPageToken}`. See [docs/runtime.md](docs/runtime.md#incident-queue). |
 | PUT /api/v1/pipelines/{id}/settings | Existing complete replacement retained: mandatory criticality/monitoringStatus; omitted or null optional fields clear their values. |
 | PUT /api/v1/pipelines/{id}/policy | Replace criticality, monitoringStatus and environment. All three keys must be present; environment:null clears it. Preserve ownership, including concurrent updates. |
 | PUT /api/v1/pipelines/{id}/ownership | Replace responsibleTeamRef and responsibleTeamNameSnapshot. Both keys must be present; explicit null clears that value. Preserve policy, including concurrent updates. No pipeline owners are introduced. |
@@ -91,13 +73,13 @@ The frontend-facing pipeline responses consistently include repositoryId, github
 | GET /api/v1/pipelines/{id}/grants | CONFIGURE plus current administration. Lists stored grant identities/capabilities, not GitHub roles or user profiles. |
 | GET /api/v1/pipelines/{id}/activities | CONFIGURE plus current administration. Sanitized pipeline-only audit; historyComplete=false. Old missing fields remain absent. |
 
-Every settings/section update also requires CONFIGURE plus current GitHub administration. Executions, stages, incidents, incident runs and human incident commands resolve their owning repository and apply the same cumulative checks; cross-pipeline verification checks both resources. Missing GitHub linkage returns 403 with GITHUB_CONNECTION_REQUIRED, denied access returns 403 and unavailable/expired/misbound verification returns 503. The normal unavailable adapter makes this boundary observable after JWT validation. Connector results may be reused only inside one HTTP request, never positively cached between requests.
+Every settings/section update also requires CONFIGURE plus current GitHub administration. Executions, stages, incidents, incident runs and human incident commands resolve their owning repository and apply the same cumulative checks; cross-pipeline verification checks both resources. Missing GitHub linkage returns 403 with GITHUB_CONNECTION_REQUIRED, denied access returns 403 and unavailable/expired/misbound verification returns 503. Connector results may be reused only inside one HTTP request, never positively cached between requests.
 
 Lists retain offset=0 and limit=25 defaults; offset is a nonnegative integer and limit is an integer from 1 to 100. Policy/ownership audit snapshots now include all nullable configuration fields (snapshotVersion=2); earlier records are incomplete and never reconstructed. Recognizable credential values are rejected in new configuration input and redacted in historical metadata. Audit is whitelisted metadata, never token or provider-payload storage.
 
 Stop the application with Ctrl+C. Stop the example database with `docker stop pipeline-postgres-dev`; its container and data are disposable and removed on exit. The Flyway history table is ops.pipeline_flyway_schema_history; application schema changes come from Flyway, with Hibernate ddl-auto=validate and open-in-view disabled.
 
-The suite checks PostgreSQL identity/integrity, metadata precision, startup safeguards, incident/origin commit and rollback, the approved lifecycle through application and signed HTTP calls, capability separation, concurrent operators, audit rollback, deterministic IDs, broker duplicates/order/conflicts and commit-before-settlement. External Service Bus message contexts and the explicitly configured GitHub connector facts are simulated; core persistence/transactions and the HTTP pipeline are real. ConnectorUnavailableTests separately checks the normal unavailable connector with a locally signed JWT; no test-only permissive adapter is packaged. The [verification boundaries](docs/architecture.md#verification-boundaries) explain the fixture separation and remaining limits. The older bootstrap/lookup records preserve historical evidence; the Windows wrapper remains untested on Windows.
+The suite checks PostgreSQL identity/integrity, metadata precision, startup safeguards, incident/origin commit and rollback, the approved lifecycle through application and signed HTTP calls, capability separation, concurrent operators, audit rollback, deterministic IDs, broker duplicates/order/conflicts and commit-before-settlement. External Service Bus message contexts and the explicitly configured GitHub connector facts are simulated; core persistence/transactions and the HTTP pipeline are real. ConnectorUnavailableTests checks the real Ingestion connector with Ingestion unreachable (503); no test-only permissive adapter is packaged. The [verification boundaries](docs/architecture.md#verification-boundaries) explain the fixture separation and remaining limits. The older bootstrap/lookup records preserve historical evidence; the Windows wrapper remains untested on Windows.
 
 For the current documentation foundation, check affected links and consistency with the referenced sources, then run:
 
@@ -126,7 +108,7 @@ docker build --platform linux/amd64 --build-arg VCS_REF="$(git rev-parse HEAD)" 
 python3 tools/check_image.py pipesor-pipeline-service:local-ci
 ```
 
-The image check verifies user `10001:10001`, rejection without datasource configuration, migrations/startup with disposable PostgreSQL and HTTP 401 for an unauthenticated business request. It creates uniquely named local containers/network, publishes only a random localhost port and removes its resources on exit. Its synthetic credentials/shared-audit fixture and `local` migration profile are test setup. Container defaults bind `0.0.0.0:8080`; they do not approve cloud ingress, probes or a production migration mechanism. The base image is pinned by digest; dependency/base-image updates require re-verification. The Docker context includes only the packaged JAR and Dockerfile.
+The image check verifies user `10001:10001`, rejection without runtime configuration, migrations/startup with disposable PostgreSQL under the `local` profile with a disposable signing key, readiness and HTTP 401 for an unauthenticated business request. It creates uniquely named local containers/network, publishes only a random localhost port and removes its resources on exit. Its synthetic credentials, signing key and `local` profile are test setup. Container defaults bind `0.0.0.0:8080`; they do not approve cloud ingress, probes or a production migration mechanism. The base image is pinned by digest; dependency/base-image updates require re-verification. The Docker context includes only the packaged JAR and Dockerfile.
 
 Local workflow validation uses **act 0.2.97** plus **actionlint 1.7.12**. Install the official Linux x86-64 release binaries into ignored `.tools/bin`, checking the published checksums (the tools are development-only):
 
