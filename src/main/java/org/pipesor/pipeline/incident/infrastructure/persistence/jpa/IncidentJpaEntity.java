@@ -61,6 +61,10 @@ public class IncidentJpaEntity extends CreatedJpaEntity {
     @Column(nullable = false, columnDefinition = "text")
     String correlationId;
 
+    /** Assigned by the database sequence on insert (V7); presentation only, never an identity. */
+    @Column(nullable = false, insertable = false, updatable = false)
+    Long displayNumber;
+
     protected IncidentJpaEntity() {
     }
 

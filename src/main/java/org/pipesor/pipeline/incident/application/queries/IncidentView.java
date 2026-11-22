@@ -20,5 +20,7 @@ public record IncidentView(
         Instant verificationStartedAt,
         Instant resolvedAt,
         String correlationId,
-        Instant createdAt) {
+        Instant createdAt,
+        /** Human-friendly number shown as {@code INC-<n>}; presentation only, the UUID stays the identity. */
+        long displayNumber) {
 }
