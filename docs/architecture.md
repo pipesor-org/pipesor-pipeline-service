@@ -226,7 +226,7 @@ Explicitly approved by the user in this session for the existing dashboard → P
 | GET /api/v1/pipelines/{id} | VIEW on id. |
 | GET /api/v1/pipelines/{id}/executions; GET /api/v1/executions/{id}; GET /api/v1/executions/{id}/stages | VIEW on the owning pipeline. |
 | GET /api/v1/pipelines/{id}/incidents; GET /api/v1/incidents/{id}; GET /api/v1/incidents/{id}/runs | VIEW on the incident's pipeline. |
-| GET /api/v1/incidents?state=OPEN\|NEEDS_VALIDATION\|RESOLVED&pageSize&pageToken | Grants and current GitHub read applied in SQL before keyset paging; `{items, nextPageToken}` ([runtime.md](runtime.md#incident-queue)). |
+| GET /api/v1/incidents?state=OPEN\|RESOLVED&pageSize&pageToken | Grants and current GitHub read applied in SQL before keyset paging; `{items, nextPageToken}` ([runtime.md](runtime.md#incident-queue)). |
 | POST /api/v1/incidents/{id}/remediation | OPERATE; empty body; explicit start from OPEN. |
 | POST /api/v1/incidents/{id}/verification | OPERATE plus VIEW on the candidate pipeline; body {"executionId":"uuid"}. |
 | POST /api/v1/incidents/{id}/retry-remediation; POST /api/v1/incidents/{id}/resolve | OPERATE plus VIEW on the referenced execution pipeline; body {"executionId":"uuid"}; enforce linked/current-cycle rules. |

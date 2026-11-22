@@ -8,10 +8,13 @@ import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
 
 /** Cross-pipeline incident queue for one actor, newest first, keyset-paged after {@code after}. */
 public record ListIncidentQueueQuery(String actorRef, State state, int pageSize, Cursor after) {
-    /** Operations queues: OPEN covers open and in-remediation incidents, NEEDS_VALIDATION those in verification. */
+    /**
+     * Lifecycle queues: OPEN is every active incident (open, in remediation or in verification) and RESOLVED the
+     * resolved ones. Diagnosis validation is not a lifecycle state: the dashboard's Needs validation view is the
+     * RESOLVED queue joined with Recommendation's review status, which Pipeline does not own.
+     */
     public enum State {
-        OPEN(Set.of(IncidentStatus.OPEN, IncidentStatus.IN_REMEDIATION)),
-        NEEDS_VALIDATION(Set.of(IncidentStatus.VERIFICATION)),
+        OPEN(Set.of(IncidentStatus.OPEN, IncidentStatus.IN_REMEDIATION, IncidentStatus.VERIFICATION)),
         RESOLVED(Set.of(IncidentStatus.RESOLVED));
 
         private final Set<IncidentStatus> statuses;
