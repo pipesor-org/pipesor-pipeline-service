@@ -11,7 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  */
 @ConfigurationProperties("pipeline.ingestion")
 public record IngestionClientProperties(URI baseUri, Duration connectTimeout, Duration requestTimeout,
-        Duration decisionBudget, int maxResponseBytes, int maxBatchSize) {
+        Duration decisionBudget, int maxResponseBytes, int maxBatchSize, Duration viewAccessCacheTtl) {
     public IngestionClientProperties {
         Objects.requireNonNull(baseUri, "PIPESOR_ENDPOINTS_INGESTION is required");
         connectTimeout = connectTimeout == null ? Duration.ofSeconds(2) : connectTimeout;
@@ -19,6 +19,7 @@ public record IngestionClientProperties(URI baseUri, Duration connectTimeout, Du
         decisionBudget = decisionBudget == null ? Duration.ofSeconds(5) : decisionBudget;
         maxResponseBytes = maxResponseBytes == 0 ? 262144 : maxResponseBytes;
         maxBatchSize = maxBatchSize == 0 ? 50 : maxBatchSize;
+        viewAccessCacheTtl = viewAccessCacheTtl == null ? Duration.ofSeconds(30) : viewAccessCacheTtl;
         if (!positive(connectTimeout) || !positive(requestTimeout) || decisionBudget.isNegative()
                 || requestTimeout.plus(decisionBudget).compareTo(Duration.ofSeconds(15)) > 0
                 || maxResponseBytes < 1 || maxBatchSize < 1) {
