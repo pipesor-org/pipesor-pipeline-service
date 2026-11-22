@@ -10,6 +10,10 @@ SET display_number = n.number
 FROM (SELECT id, 1000 + row_number() OVER (ORDER BY created_at, id) AS number FROM ops.incidents) n
 WHERE i.id = n.id;
 
+-- The UPDATE queues the deferred incidents_origin_required checks; run them now (the invariant is
+-- unchanged) so the ALTER TABLE below is not refused for pending trigger events.
+SET CONSTRAINTS ALL IMMEDIATE;
+
 SELECT setval('ops.incident_display_number_seq',
               GREATEST((SELECT max(display_number) FROM ops.incidents), 1000));
 
