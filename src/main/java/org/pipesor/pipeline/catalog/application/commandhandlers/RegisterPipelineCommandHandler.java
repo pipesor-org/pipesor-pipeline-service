@@ -36,7 +36,9 @@ public final class RegisterPipelineCommandHandler {
         var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         var pipeline = store.register(command, verified, ids.get(),
                 DeterministicIds.pipeline(command.githubRepositoryId(), command.githubWorkflowId()), now);
-        if (!verified.access().validUntil().isAfter(clock.instant())) { throw new GitHubVerificationUnavailable(); }
+        if (!verified.access().validUntil().isAfter(clock.instant())) {
+            throw new GitHubVerificationUnavailable(GitHubVerificationUnavailable.Reason.FACTS_EXPIRED);
+        }
         grants.change(new ChangePipelineAccessCommand(pipeline.id(), command.actorRef(), command.correlationId(),
                 command.actorRef(), AccessCapability.CONFIGURE, true), ids.get(), now);
         var after = new LinkedHashMap<>(PipelineAuditMetadata.of(pipeline));
