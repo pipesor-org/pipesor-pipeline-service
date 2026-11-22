@@ -35,10 +35,11 @@ public class SqlSnapshotStore implements SnapshotStore {
     public Optional<Registration> lockPipeline(String repository, String workflow) {
         // MVP serialization per workflow also protects the first observation, before an execution row exists.
         return jdbc.query("""
-                SELECT p.id, p.monitoring_status::text = 'ACTIVE' AS active
+                SELECT p.id, p.monitoring_status::text = 'ACTIVE' AS active, p.criticality::text AS criticality
                 FROM ops.pipelines p JOIN ops.repositories r ON r.id = p.repository_id
                 WHERE r.github_repository_id = ? AND p.github_workflow_id = ? FOR UPDATE OF p
-                """, (row, index) -> new Registration(row.getObject("id", UUID.class), row.getBoolean("active")), repository, workflow).stream().findFirst();
+                """, (row, index) -> new Registration(row.getObject("id", UUID.class), row.getBoolean("active"),
+                        row.getString("criticality")), repository, workflow).stream().findFirst();
     }
 
     @Override

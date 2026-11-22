@@ -16,7 +16,8 @@ public interface SnapshotStore {
     void persist(ExecutionSnapshot snapshot, UUID pipelineId, Instant now);
     void receipt(ApplyExecutionSnapshotCommand command, String disposition, Instant now);
 
-    record Registration(UUID id, boolean active) {}
+    /** The registered pipeline, locked for this snapshot; {@code criticality} seeds a new incident's severity. */
+    record Registration(UUID id, boolean active, String criticality) {}
     record Version(Instant sourceUpdatedAt, String contentDigest) {}
     record StoredExecution(UUID id, UUID pipelineId, String runId, int attempt, String status, String conclusion) {}
 }

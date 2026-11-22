@@ -77,5 +77,6 @@ public class IncidentJpaEntity extends CreatedJpaEntity {
         summary = details.summary();
         detectedAt = details.detectedAt();
         correlationId = details.correlationId();
+        severity = details.severity();
     }
 }

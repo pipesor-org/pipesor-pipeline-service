@@ -87,6 +87,8 @@ class ExecutionSnapshotTests extends PostgresIntegrationTest {
         assertThat(jdbc.queryForObject("SELECT branch FROM ops.pipeline_executions WHERE id = ?", String.class, EXECUTION)).isEqualTo("release/snapshot");
         assertThat(jdbc.queryForObject("SELECT started_at FROM ops.pipeline_executions WHERE id = ?", Timestamp.class, EXECUTION).toInstant()).isEqualTo(BASE);
         assertThat(jdbc.queryForObject("SELECT id FROM ops.incidents WHERE pipeline_id = ?", UUID.class, PIPELINE)).isEqualTo(INCIDENT);
+        // MVP rule: the incident's initial severity is the pipeline's criticality (HIGH in this fixture).
+        assertThat(jdbc.queryForObject("SELECT severity::text FROM ops.incidents WHERE id = ?", String.class, INCIDENT)).isEqualTo("HIGH");
         assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.incident_runs WHERE incident_id = ? AND role = 'ORIGIN'", Integer.class, INCIDENT)).isEqualTo(1);
         assertThat(jdbc.queryForObject("SELECT external_status FROM ops.execution_stages WHERE execution_id = ?", String.class, EXECUTION)).isEqualTo("completed");
     }

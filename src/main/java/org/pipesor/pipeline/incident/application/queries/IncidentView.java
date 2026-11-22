@@ -10,7 +10,8 @@ public record IncidentView(
         UUID id,
         UUID pipelineId,
         IncidentStatus status,
-        Severity severity,
+        /** Initial severity from the pipeline's criticality when opened; null when unclassified. */
+        @io.swagger.v3.oas.annotations.media.Schema(nullable = true, types = {"string", "null"}) Severity severity,
         PipelineStage stage,
         String summary,
         String assigneeRef,
