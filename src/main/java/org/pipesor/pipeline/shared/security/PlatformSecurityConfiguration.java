@@ -77,6 +77,8 @@ public class PlatformSecurityConfiguration {
         AccessDeniedHandler denied = (request, response, failure) ->
                 ApiExceptionHandler.writeSecurityProblem(response, request, HttpStatus.FORBIDDEN.value());
         http.csrf(AbstractHttpConfigurer::disable)
+                .logout(AbstractHttpConfigurer::disable)
+                .addFilterBefore(new UndisclosedEndpointsFilter(), org.springframework.security.web.session.DisableEncodeUrlFilter.class)
                 .cors(Customizer.withDefaults())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .requestCache(AbstractHttpConfigurer::disable)
