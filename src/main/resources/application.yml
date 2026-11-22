@@ -1,21 +1,82 @@
 spring:
   application:
     name: pipesor-pipeline-service
+  datasource:
+    url: ${PIPESOR_DATABASE_URL}
+    username: ${PIPESOR_DATABASE_USERNAME:}
+    password: ${PIPESOR_DATABASE_PASSWORD:}
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: validate
   flyway:
-    enabled: false
+    enabled: true
     default-schema: ops
     schemas: ops
     table: pipeline_flyway_schema_history
 
 server:
-  address: 127.0.0.1
+  address: ${SERVER_ADDRESS:127.0.0.1}
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    # Also bounds stalled request bodies of the internal check (read before admission).
+    connection-timeout: 10s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: never
+      validate-group-membership: false
+      group:
+        readiness:
+          include: readinessState,db,serviceBus
+  health:
+    livenessstate:
+      enabled: true
+    readinessstate:
+      enabled: true
 
 springdoc:
   api-docs:
     enabled: false
   swagger-ui:
     enabled: false
+
+pipeline:
+  ingestion:
+    base-uri: ${pipesor.endpoints.ingestion:}
+    connect-timeout: 2s
+    request-timeout: 5s
+    max-response-bytes: 262144
+    max-batch-size: 50
+  owner-validation:
+    request-timeout: 3s
+    max-request-bytes: 4096
+    max-response-bytes: 1024
+    max-in-flight: 16
+  messaging:
+    enabled: true
+    max-message-bytes: 262144
+    concurrency: 4
+    lock-renewal: 5m
+    drain-timeout: 30s
+    max-deliveries: 10
+
+---
+spring:
+  config:
+    activate:
+      on-profile: azure
+  datasource:
+    # Passwordless Entra authentication with the workload identity; no password under azure.
+    password: ""
+    hikari:
+      data-source-properties:
+        authenticationPluginClassName: com.azure.identity.extensions.jdbc.postgresql.AzurePostgresqlAuthenticationPlugin
