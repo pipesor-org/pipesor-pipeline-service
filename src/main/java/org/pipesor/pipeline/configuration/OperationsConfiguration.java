@@ -7,6 +7,7 @@ import org.pipesor.pipeline.catalog.application.commandhandlers.ConfigurePipelin
 import org.pipesor.pipeline.catalog.application.commandhandlers.RegisterPipelineCommandHandler;
 import org.pipesor.pipeline.catalog.application.commands.ChangePipelineAccessCommand;
 import org.pipesor.pipeline.catalog.application.commands.ConfigurePipelineCommand;
+import org.pipesor.pipeline.catalog.application.ports.CaptureScopeSync;
 import org.pipesor.pipeline.catalog.application.ports.PipelineAccess;
 import org.pipesor.pipeline.catalog.application.ports.PipelineAdministrationLookup;
 import org.pipesor.pipeline.catalog.application.ports.PipelineGrantStore;
@@ -117,7 +118,7 @@ public class OperationsConfiguration {
             PipelineAccess access,
             PipelineSettingsStore settings,
             PipelineGrantStore grants,
-            AuditLog audit,
+            AuditLog audit, CaptureScopeSync scopes,
             Clock clock, PlatformTransactionManager manager) {
         var handler = new ConfigurePipelineCommandHandler(
                 access, settings, grants, audit, clock, UUID::randomUUID);
@@ -127,7 +128,12 @@ public class OperationsConfiguration {
             public PipelineView handle(
                     ConfigurePipelineCommand command) {
                 var capabilities = human.require(command.actorRef(), command.pipelineId(), AccessCapability.CONFIGURE);
-                return transaction.execute(status -> handler.handle(command)).withCapabilities(capabilities);
+                var change = transaction.execute(status -> handler.configure(command));
+                // ADR-023: the committed status is pushed to Ingestion after the transaction, never inside it.
+                if (change.monitoringStatusChanged()) {
+                    CaptureScopeConfiguration.afterCommit(scopes, change.after(), command.correlationId());
+                }
+                return change.after().withCapabilities(capabilities);
             }
 
             @Override
@@ -153,12 +159,16 @@ public class OperationsConfiguration {
     PipelineRegistrationService pipelineRegistrationService(
             GitHubAccessChecks github,
             PipelineRegistrationStore store,
-            PipelineGrantStore grants, AuditLog audit, Clock clock, PlatformTransactionManager manager) {
+            PipelineGrantStore grants, AuditLog audit, CaptureScopeSync scopes, Clock clock,
+            PlatformTransactionManager manager) {
         var handler = new RegisterPipelineCommandHandler(store, grants, audit, clock, UUID::randomUUID);
         var transaction = new TransactionTemplate(manager);
         return command -> {
             var verified = github.registration(command.actorRef(), command.githubRepositoryId(), command.githubWorkflowId());
-            return transaction.execute(status -> handler.handle(command, verified));
+            var created = transaction.execute(status -> handler.handle(command, verified));
+            // ADR-023: makes the committed registration capturable; a failure leaves it to reconciliation.
+            CaptureScopeConfiguration.afterCommit(scopes, created, command.correlationId());
+            return created;
         };
     }
 

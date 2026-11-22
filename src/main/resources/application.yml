@@ -36,7 +36,7 @@ management:
       validate-group-membership: false
       group:
         readiness:
-          include: readinessState,db,serviceBus
+          include: readinessState,db,serviceBus,captureScope
   health:
     livenessstate:
       enabled: true
@@ -58,6 +58,11 @@ pipeline:
     decision-budget: 5s
     max-response-bytes: 262144
     max-batch-size: 50
+  capture-scope:
+    # ADR-023: repeat every pipeline's monitoring status to Ingestion at readiness and periodically.
+    reconcile-enabled: ${pipesor.capture-scope.reconcile-enabled:true}
+    reconcile-interval: ${pipesor.capture-scope.reconcile-interval:5m}
+    page-size: 100
   owner-validation:
     request-timeout: 3s
     max-request-bytes: 4096

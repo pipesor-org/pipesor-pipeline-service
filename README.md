@@ -45,7 +45,7 @@ The same verification includes `OperationalReferenceTests`, which checks late
 owner records, committed reference contradictions and authority-before-read
 behavior using disposable PostgreSQL and an explicit test machine authority.
 
-Tests boot the real application under the `local` profile with locally generated platform keys (`TestIdentity`), real PostgreSQL and real HTTP; only key discovery, the GitHub connector facts (`GitHubConnectorDouble`) and Service Bus SDK message contexts are simulated. `IngestionGitHubConnectorTests` and `OwnerValidationHttpTests` exercise the real outbound clients against loopback stand-ins.
+Tests boot the real application under the `local` profile with locally generated platform keys (`TestIdentity`), real PostgreSQL and real HTTP; only key discovery, the GitHub connector facts (`GitHubConnectorDouble`) and Service Bus SDK message contexts are simulated. `IngestionGitHubConnectorTests`, `HttpCaptureScopeSyncTests` and `OwnerValidationHttpTests` exercise the real outbound clients against loopback stand-ins. Integration tests disable the capture scope reconciler (`pipeline.capture-scope.reconcile-enabled=false`); `CaptureScopeSyncTests` records the post-commit calls while Ingestion stays unreachable.
 
 For an interactive local run use the shared stack from `pipesor-workspace` (PostgreSQL on 127.0.0.1:55432, Service Bus emulator on 5672) and its generated environment file:
 
@@ -59,11 +59,18 @@ curl -s http://127.0.0.1:8082/.well-known/jwks.json
 
 Flyway migrates `ops` (history `ops.pipeline_flyway_schema_history`) and creates `audit.audit_events` if absent at every startup; Hibernate only validates. The `local` profile additionally enables OpenAPI at `/v3/api-docs` and Swagger UI. Configuration, routes and profile differences are listed in [docs/runtime.md](docs/runtime.md).
 
+| Setting | Default | Use |
+|---|---|---|
+| `PIPESOR_ENDPOINTS_INGESTION` (`pipeline.ingestion.base-uri`) | required | Ingestion base URL; also used for `PUT /internal/v1/capture/workflow-scopes/{repositoryId}/{workflowId}` with role `Pipeline.CaptureScope.Write` |
+| `PIPESOR_CAPTURE_SCOPE_RECONCILE_INTERVAL` (`pipeline.capture-scope.reconcile-interval`) | `5m` (min 10 s) | capture scope reconciliation period after readiness |
+| `PIPESOR_CAPTURE_SCOPE_RECONCILE_ENABLED` (`pipeline.capture-scope.reconcile-enabled`) | `true` | disable the reconciliation schedule (tests) |
+| `pipeline.capture-scope.page-size` | `100` | pipelines read per reconciliation page |
+
 The frontend-facing pipeline responses consistently include repositoryId, githubRepositoryId, fullName, defaultBranch, workflow identity/name/file, operational settings, team references, createdAt and the current user's effectiveCapabilities. VIEW requires GitHub read; OPERATE requires read; CONFIGURE requires administration. CONFIGURE and OPERATE each imply VIEW but remain independent. Registration creates CONFIGURE, not OPERATE. Stored grants never override lost GitHub access, including historical child resources.
 
 | Endpoint | Behavior and required authorization |
 |---|---|
-| POST /api/v1/pipelines | Verified linked identity, tenant-admitted installation, effective read and repository administration; 201 with Location. Metadata comes from the connector, not frontend names/paths. |
+| POST /api/v1/pipelines | Verified linked identity, tenant-admitted installation, effective read and repository administration; 201 with Location. Metadata comes from the connector, not frontend names/paths. After commit the capture scope is pushed to Ingestion (ADR-023); a failed push keeps the 201 and is repaired by reconciliation. |
 | GET /api/v1/pipelines; GET /api/v1/pipelines/{id} | AIOps VIEW plus current GitHub read; repository eligibility and grants are combined before pagination. |
 | GET /api/v1/incidents?state=OPEN\|NEEDS_VALIDATION\|RESOLVED&pageSize&pageToken | Cross-pipeline queue, newest first, filtered by grants and current GitHub read before paging. Items match `/pipelines/{id}/incidents`; response `{items, nextPageToken}`. See [docs/runtime.md](docs/runtime.md#incident-queue). |
 | PUT /api/v1/pipelines/{id}/settings | Existing complete replacement retained: mandatory criticality/monitoringStatus; omitted or null optional fields clear their values. |
@@ -73,7 +80,7 @@ The frontend-facing pipeline responses consistently include repositoryId, github
 | GET /api/v1/pipelines/{id}/grants | CONFIGURE plus current administration. Lists stored grant identities/capabilities, not GitHub roles or user profiles. |
 | GET /api/v1/pipelines/{id}/activities | CONFIGURE plus current administration. Sanitized pipeline-only audit; historyComplete=false. Old missing fields remain absent. |
 
-Every settings/section update also requires CONFIGURE plus current GitHub administration. Executions, stages, incidents, incident runs and human incident commands resolve their owning repository and apply the same cumulative checks; cross-pipeline verification checks both resources. Missing GitHub linkage returns 403 with GITHUB_CONNECTION_REQUIRED, denied access returns 403 and unavailable/expired/misbound verification returns 503. Connector results may be reused only inside one HTTP request, never positively cached between requests.
+Every settings/section update also requires CONFIGURE plus current GitHub administration. A committed `monitoringStatus` change is pushed to Ingestion's capture scope after the transaction, like registration. Executions, stages, incidents, incident runs and human incident commands resolve their owning repository and apply the same cumulative checks; cross-pipeline verification checks both resources. Missing GitHub linkage returns 403 with GITHUB_CONNECTION_REQUIRED, denied access returns 403 and unavailable/expired/misbound verification returns 503. Connector results may be reused only inside one HTTP request, never positively cached between requests.
 
 Lists retain offset=0 and limit=25 defaults; offset is a nonnegative integer and limit is an integer from 1 to 100. Policy/ownership audit snapshots now include all nullable configuration fields (snapshotVersion=2); earlier records are incomplete and never reconstructed. Recognizable credential values are rejected in new configuration input and redacted in historical metadata. Audit is whitelisted metadata, never token or provider-payload storage.
 
