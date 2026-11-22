@@ -35,7 +35,11 @@ import org.pipesor.pipeline.incident.application.ports.IncidentLookup;
 import org.pipesor.pipeline.incident.application.ports.IncidentOriginLookup;
 import org.pipesor.pipeline.incident.application.ports.IncidentStore;
 import org.pipesor.pipeline.incident.application.ports.VerificationLookup;
+import org.pipesor.pipeline.incident.application.queryhandlers.DiagnosisEntitlementQueryHandler;
 import org.pipesor.pipeline.incident.application.queryhandlers.IncidentQueryHandler;
+import org.pipesor.pipeline.incident.application.queryhandlers.IncidentQueueQueryHandler;
+import org.pipesor.pipeline.incident.application.services.DiagnosisEntitlementService;
+import org.pipesor.pipeline.incident.application.services.IncidentQueueService;
 import org.pipesor.pipeline.incident.application.services.IncidentCommandService;
 import org.pipesor.pipeline.incident.application.services.IncidentLifecycleService;
 import org.pipesor.pipeline.incident.application.services.IncidentQueryService;
@@ -60,6 +64,16 @@ public class OperationsConfiguration {
     @Bean
     IncidentQueryService incidentQueryService(IncidentLookup lookup) {
         return new IncidentQueryHandler(lookup);
+    }
+
+    @Bean
+    IncidentQueueService incidentQueueService(HumanPipelineAccess human, IncidentLookup lookup) {
+        return new IncidentQueueQueryHandler(human::visibleRepositoryIds, lookup);
+    }
+
+    @Bean
+    DiagnosisEntitlementService diagnosisEntitlementService(IncidentLookup lookup, HumanPipelineAccess human) {
+        return new DiagnosisEntitlementQueryHandler(lookup, human);
     }
 
     @Bean

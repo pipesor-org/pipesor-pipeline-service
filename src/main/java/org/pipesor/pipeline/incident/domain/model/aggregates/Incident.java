@@ -98,7 +98,7 @@ public final class Incident extends Entity {
 
     private void requireState(IncidentStatus expected) {
         if (lifecycle.status() != expected) {
-            throw new IllegalStateException("Transition unavailable from " + lifecycle.status());
+            throw new InvalidIncidentTransition("Transition unavailable from " + lifecycle.status());
         }
     }
 
