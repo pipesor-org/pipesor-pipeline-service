@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25-jre-noble@sha256:41a70a160a5a157126929c1901e8dcf17ea4fd88eca1e7b9abf3cb1bb04df6c2
+FROM eclipse-temurin:25-jre-noble@sha256:f3dd0838e69b881cc382237d5901e74ae3705b1056ad964b2e0e523b174fef99
 
 ARG VCS_REF=unknown
 LABEL org.opencontainers.image.source="https://github.com/pipesor-org/pipesor-pipeline-service" \
