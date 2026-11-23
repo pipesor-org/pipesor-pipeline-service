@@ -55,7 +55,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: pipesor-org/pipesor-ci/actions/release@efa9e05c397524f032da5cc102fd55dbfa6afd1c # v1.0.0-rc (pre-merge validation)
+      - uses: pipesor-org/pipesor-ci/actions/release@7b037de869a7e0b192ad20cd5532cf7a036a164b # v1.0.0-rc (pre-merge validation)
         with:
           mode: publish
           kind: ${{ inputs.kind }}
