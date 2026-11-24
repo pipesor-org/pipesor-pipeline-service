@@ -72,6 +72,11 @@ public class OpenApiConfiguration {
                 .description("INC-123 or 123 matches displayNumber exactly (from one digit); other text (2-100 characters) is a "
                         + "case-insensitive partial match on the repository full name or the workflow name")
                 .schema(new StringSchema().minLength(1).maxLength(100)));
+        for (var name : new String[] {IncidentFilterParameters.RESOLVED_FROM, IncidentFilterParameters.RESOLVED_TO}) {
+            operation.addParametersItem(new QueryParameter().name(name).required(false)
+                    .description("RFC 3339 instant, inclusive bound of resolvedAt; only with state=RESOLVED")
+                    .schema(new StringSchema().format("date-time")));
+        }
         operation.getResponses().get("400").setDescription(
                 "INVALID_REQUEST (state, pageSize), INVALID_FILTER (filter values) or INVALID_PAGE_TOKEN");
     }

@@ -221,6 +221,45 @@ class IncidentQueueFiltersTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void resolvedQueueCanBeOrderedByResolutionTimeAndWindowed() {
+        // Created oldest first, resolved in the opposite order.
+        var oldest = resolved(payments, PipelineStage.TESTING, "2026-10-01T00:00:00Z", "2026-11-20T00:00:00Z");
+        var middle = resolved(payments, PipelineStage.TESTING, "2026-10-01T00:00:00Z", "2026-11-10T00:00:00Z");
+        var newest = resolved(web, PipelineStage.BUILD, "2026-10-01T00:00:00Z", "2026-11-05T00:00:00Z");
+        resolved(denied, PipelineStage.TESTING, "2026-10-01T00:00:00Z", "2026-11-25T00:00:00Z");
+        incident(payments, "OPEN", "HIGH", PipelineStage.TESTING);
+
+        var byCreation = get("/api/v1/incidents?state=RESOLVED");
+        assertThat(ids(byCreation)).containsExactly(newest, middle, oldest);
+        assertThat(byCreation.get("appliedFilters").get("sort").asString()).isEqualTo("createdAt");
+        var first = get("/api/v1/incidents?state=RESOLVED&sort=resolvedAt&pageSize=2");
+        assertThat(ids(first)).containsExactly(oldest, middle);
+        assertThat(first.get("total").asLong()).isEqualTo(3);
+        assertThat(first.get("appliedFilters").get("sort").asString()).isEqualTo("resolvedAt");
+        String token = first.get("nextPageToken").asString();
+        assertThat(ids(get("/api/v1/incidents?state=RESOLVED&sort=resolvedAt&pageSize=2&pageToken=" + token))).containsExactly(newest);
+        // The token is bound to the order.
+        error("/api/v1/incidents?state=RESOLVED&pageSize=2&pageToken=" + token, 400, "INVALID_PAGE_TOKEN");
+        error("/api/v1/incidents?state=OPEN&sort=resolvedAt", 400, "INVALID_REQUEST");
+        error("/api/v1/incidents?state=RESOLVED&sort=resolved_at", 400, "INVALID_REQUEST");
+        // The summary has no order, so its echo has no sort.
+        assertThat(get("/api/v1/incidents/summary?state=RESOLVED").get("appliedFilters").has("sort")).isFalse();
+
+        // Inclusive resolution window, on the list and the summary.
+        var window = get("/api/v1/incidents?state=RESOLVED&sort=resolvedAt&resolvedFrom=2026-11-10T00:00:00Z&resolvedTo={to}",
+                "2026-11-20T00:00:00+00:00");
+        assertThat(ids(window)).containsExactly(oldest, middle);
+        assertThat(window.get("appliedFilters").get("resolvedFrom").asString()).isEqualTo("2026-11-10T00:00:00Z");
+        assertThat(window.get("appliedFilters").get("resolvedTo").asString()).isEqualTo("2026-11-20T00:00:00Z");
+        assertThat(ids(get("/api/v1/incidents?state=RESOLVED&resolvedFrom=2026-11-11T00:00:00Z"))).containsExactly(oldest);
+        assertThat(get("/api/v1/incidents/summary?state=RESOLVED&resolvedTo=2026-11-10T00:00:00Z").get("total").asLong()).isEqualTo(2);
+        error("/api/v1/incidents?state=OPEN&resolvedFrom=2026-11-10T00:00:00Z", 400, "INVALID_FILTER");
+        error("/api/v1/incidents?state=RESOLVED&resolvedFrom=yesterday", 400, "INVALID_FILTER");
+        error("/api/v1/incidents?state=RESOLVED&resolvedFrom=2026-11-20T00:00:00Z&resolvedTo=2026-11-10T00:00:00Z", 400, "INVALID_FILTER");
+        error("/api/v1/incidents/summary?state=RESOLVED&resolvedTo=2026-11-10T00:00:00Z&resolvedTo=2026-11-11T00:00:00Z", 400, "INVALID_FILTER");
+    }
+
+    @Test
     void invalidFilterValuesAreRejected() {
         for (var query : List.of("severity=URGENT", "severity=high", "severity=", "stage=LINT", "status=RESOLVED",
                 "diagnosis=UNKNOWN", "pipelineId=not-a-uuid", "repositoryId=abc", "repositoryId=0123", "q=a",

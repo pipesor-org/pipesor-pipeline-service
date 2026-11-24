@@ -1,6 +1,9 @@
 package org.pipesor.pipeline.incident.interfaces.rest.transform;
 
 import jakarta.servlet.http.HttpServletRequest;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -24,6 +27,8 @@ public final class IncidentFilterParameters {
     public static final String STATUS = "status";
     public static final String DIAGNOSIS = "diagnosis";
     public static final String Q = "q";
+    public static final String RESOLVED_FROM = "resolvedFrom";
+    public static final String RESOLVED_TO = "resolvedTo";
 
     private IncidentFilterParameters() {}
 
@@ -37,7 +42,19 @@ public final class IncidentFilterParameters {
                 parsed(request, STAGE, value -> token(PipelineStage.class, value)),
                 parsed(request, STATUS, value -> token(IncidentStatus.class, value)),
                 parsed(request, DIAGNOSIS, value -> token(IncidentFilter.DiagnosisFilter.class, value)),
-                q.isEmpty() ? null : IncidentFilter.TextQuery.parse(q.getFirst()));
+                q.isEmpty() ? null : IncidentFilter.TextQuery.parse(q.getFirst()),
+                instant(request, RESOLVED_FROM), instant(request, RESOLVED_TO));
+    }
+
+    private static Instant instant(HttpServletRequest request, String name) {
+        var values = values(request, name);
+        if (values.isEmpty()) return null;
+        if (values.size() > 1) throw new InvalidIncidentFilter(name + " must not repeat");
+        try {
+            return OffsetDateTime.parse(values.getFirst()).toInstant();
+        } catch (DateTimeParseException invalid) {
+            throw new InvalidIncidentFilter("Invalid " + name);
+        }
     }
 
     private static List<String> values(HttpServletRequest request, String name) {

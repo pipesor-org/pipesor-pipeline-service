@@ -1,6 +1,7 @@
 package org.pipesor.pipeline.incident.application.queries;
 
 import java.text.Normalizer;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -30,7 +31,9 @@ public record IncidentFilter(
         List<PipelineStage> stages,
         List<IncidentStatus> statuses,
         List<DiagnosisFilter> diagnoses,
-        TextQuery q) {
+        TextQuery q,
+        Instant resolvedFrom,
+        Instant resolvedTo) {
 
     public static final int MAX_VALUES = 100;
     private static final Pattern REPOSITORY_ID = Pattern.compile("[1-9][0-9]{0,19}");
@@ -106,17 +109,23 @@ public record IncidentFilter(
         for (var status : statuses) {
             if (!state.statuses().contains(status)) throw new InvalidIncidentFilter("status not valid for state");
         }
+        if ((resolvedFrom != null || resolvedTo != null) && state != ListIncidentQueueQuery.State.RESOLVED) {
+            throw new InvalidIncidentFilter("Resolution window requires state RESOLVED");
+        }
+        if (resolvedFrom != null && resolvedTo != null && resolvedFrom.isAfter(resolvedTo)) {
+            throw new InvalidIncidentFilter("resolvedFrom must not follow resolvedTo");
+        }
     }
 
     /** Only the lifecycle state, as the queue behaved before the filters existed. */
     public static IncidentFilter of(ListIncidentQueueQuery.State state) {
-        return new IncidentFilter(state, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null);
+        return new IncidentFilter(state, List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, null, null);
     }
 
     /** True when no optional filter is set. */
     public boolean unfiltered() {
         return pipelineIds.isEmpty() && repositoryIds.isEmpty() && severities.isEmpty() && stages.isEmpty()
-                && statuses.isEmpty() && diagnoses.isEmpty() && q == null;
+                && statuses.isEmpty() && diagnoses.isEmpty() && q == null && resolvedFrom == null && resolvedTo == null;
     }
 
     /** The lifecycle statuses to read: the {@code status} filter, or every status of the state. */
@@ -139,7 +148,8 @@ public record IncidentFilter(
     public String canonical() {
         return String.join(";", "state=" + state, "pipelineId=" + join(pipelineIds), "repositoryId=" + join(repositoryIds),
                 "severity=" + join(severities), "stage=" + join(stages), "status=" + join(statuses),
-                "diagnosis=" + join(diagnoses), "q=" + (q == null ? "" : q.canonical()));
+                "diagnosis=" + join(diagnoses), "q=" + (q == null ? "" : q.canonical()),
+                "resolvedFrom=" + (resolvedFrom == null ? "" : resolvedFrom), "resolvedTo=" + (resolvedTo == null ? "" : resolvedTo));
     }
 
     private static String join(List<?> values) {
