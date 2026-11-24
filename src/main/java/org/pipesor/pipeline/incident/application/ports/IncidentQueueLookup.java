@@ -15,8 +15,9 @@ import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
  * repositories (already narrowed to what current GitHub facts keep readable and admitted), before paging (ADR-020).
  */
 public interface IncidentQueueLookup {
-    /** Up to {@code limit} matching incidents after {@code after}, newest first, and the exact number of matches. */
-    Page queue(String actorRef, Set<String> repositories, IncidentFilter filter, ListIncidentQueueQuery.Cursor after, int limit);
+    /** Up to {@code limit} matching incidents after {@code after} in {@code sort} order (newest first), and the exact number of matches. */
+    Page queue(String actorRef, Set<String> repositories, IncidentFilter filter, ListIncidentQueueQuery.Sort sort,
+               ListIncidentQueueQuery.Cursor after, int limit);
 
     /** Number of matching incidents per (severity, status, diagnosis) combination. */
     List<Count> counts(String actorRef, Set<String> repositories, IncidentFilter filter);

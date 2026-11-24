@@ -80,14 +80,19 @@ repeatable filters of [ADR-027](https://github.com/pipesor-org/pipesor-docs/blob
 into words, and every word must appear, case-insensitively, in the repository full name or the workflow name). Values of one filter are OR-ed, filters are AND-ed. The exact
 contract is in [MVP HTTP API v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/mvp-http-api-v1.md#incident-queue-filters).
 
+With `state=RESOLVED` the list also accepts `resolvedFrom`/`resolvedTo` (inclusive RFC 3339 bounds of
+`resolvedAt`, also on the summary) and `sort=resolvedAt` (default `createdAt`; `resolvedAt` with `OPEN` or
+any other value is `400 INVALID_REQUEST`).
+
 `state` is required: `OPEN` covers every active incident (`OPEN`, `IN_REMEDIATION` and
 `VERIFICATION`), `RESOLVED` covers `RESOLVED`. Candidates are incidents of pipelines on which the
 caller holds any grant and whose repository current GitHub facts keep readable and admitted; a
 `repositoryId` filter is intersected with that set, and every filter is an SQL predicate of the same
-statement, before paging and counting. Order is `createdAt` descending, then id. Response:
+statement, before paging and counting. Order is `createdAt` descending (or `COALESCE(resolvedAt, createdAt)`
+with `sort=resolvedAt`), then id. Response:
 `{"items": [IncidentView...], "nextPageToken": "opaque" | null, "total": n, "appliedFilters": {...}}`.
 The page and `total` are read in one repeatable-read snapshot. Page tokens (`q2`) carry a digest of the
-normalized state and filters; another listing's token, or a malformed one, is `400 INVALID_PAGE_TOKEN`
+normalized state, filters and sort; another listing's token, or a malformed one, is `400 INVALID_PAGE_TOKEN`
 (unbound `q1` tokens are still accepted without filters). Invalid filter values are `400 INVALID_FILTER`.
 
 Every incident read (`/incidents`, `/incidents/{id}`, `/pipelines/{id}/incidents`) adds `repository
@@ -100,7 +105,7 @@ createdAt} | null` from `ops.incident_diagnoses`.
 window (default: the last 30 UTC calendar days; at most 366 days; `top` 1–50, default 10).
 
 Indexes (`V9`): `incidents (status, created_at, id)`, `(pipeline_id, status, created_at, id)`,
-`(severity, status)`, `(stage, status)`, `resolved_at` for resolved incidents, grants by
+`(severity, status)`, `(stage, status)`, `resolved_at` for resolved incidents (`V10`: the resolution order), grants by
 `(principal_ref, pipeline_id)` and `incident_diagnoses (status)`. The text query uses `ILIKE` over the
 small repository and pipeline tables (no trigram extension).
 

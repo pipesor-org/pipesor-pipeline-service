@@ -27,11 +27,11 @@ public final class IncidentQueueQueryHandler implements IncidentQueueService {
     public IncidentQueuePage handle(ListIncidentQueueQuery query) {
         var repositories = query.filter().scope(visibleRepositories.apply(query.actorRef()));
         if (repositories.isEmpty()) return new IncidentQueuePage(List.of(), null, 0);
-        var page = lookup.queue(query.actorRef(), repositories, query.filter(), query.after(), query.pageSize() + 1);
+        var page = lookup.queue(query.actorRef(), repositories, query.filter(), query.sort(), query.after(), query.pageSize() + 1);
         var rows = page.rows();
         if (rows.size() <= query.pageSize()) return new IncidentQueuePage(rows, null, page.total());
         var items = rows.subList(0, query.pageSize());
         var last = items.getLast();
-        return new IncidentQueuePage(items, new ListIncidentQueueQuery.Cursor(last.createdAt(), last.id()), page.total());
+        return new IncidentQueuePage(items, new ListIncidentQueueQuery.Cursor(query.sort().position(last), last.id()), page.total());
     }
 }

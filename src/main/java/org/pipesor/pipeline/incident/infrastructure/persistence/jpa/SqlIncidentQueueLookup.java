@@ -44,17 +44,20 @@ public class SqlIncidentQueueLookup implements IncidentQueueLookup {
     }
 
     @Override
-    public Page queue(String actorRef, Set<String> repositories, IncidentFilter filter, ListIncidentQueueQuery.Cursor after, int limit) {
+    public Page queue(String actorRef, Set<String> repositories, IncidentFilter filter, ListIncidentQueueQuery.Sort sort,
+                      ListIncidentQueueQuery.Cursor after, int limit) {
         if (repositories.isEmpty()) return new Page(List.of(), 0);
         var parameters = new MapSqlParameterSource();
         String where = where(actorRef, repositories, filter.effectiveStatuses(), filter, parameters);
+        // RESOLVED may be ordered by resolution time; an incident without one keeps its creation time.
+        String key = sort == ListIncidentQueueQuery.Sort.RESOLVED_AT ? "COALESCE(i.resolved_at, i.created_at)" : "i.created_at";
         String page = where;
         if (after != null) {
-            page += "  AND (i.created_at, i.id) < (:afterCreatedAt, :afterId)\n";
-            parameters.addValue("afterCreatedAt", OffsetDateTime.ofInstant(after.createdAt(), ZoneOffset.UTC)).addValue("afterId", after.id());
+            page += "  AND (" + key + ", i.id) < (:afterAt, :afterId)\n";
+            parameters.addValue("afterAt", OffsetDateTime.ofInstant(after.at(), ZoneOffset.UTC)).addValue("afterId", after.id());
         }
         parameters.addValue("limit", limit);
-        String rows = IncidentRows.SELECT + page + "ORDER BY i.created_at DESC, i.id DESC\nLIMIT :limit";
+        String rows = IncidentRows.SELECT + page + "ORDER BY " + key + " DESC, i.id DESC\nLIMIT :limit";
         String count = "SELECT count(*)\n" + IncidentRows.FROM + where;
         return snapshot.execute(status -> new Page(jdbc.query(rows, parameters, IncidentRows::view),
                 Objects.requireNonNull(jdbc.queryForObject(count, parameters, Long.class))));
@@ -129,6 +132,14 @@ public class SqlIncidentQueueLookup implements IncidentQueueLookup {
             if (!reviewed.isEmpty()) conditions.add("d.status IN (" + literals(reviewed) + ")");
             if (filter.diagnoses().contains(DiagnosisFilter.ABSENT)) conditions.add("d.incident_id IS NULL");
             sql.append("  AND (").append(String.join(" OR ", conditions)).append(")\n");
+        }
+        if (filter.resolvedFrom() != null) {
+            sql.append("  AND i.resolved_at >= :resolvedFrom\n");
+            parameters.addValue("resolvedFrom", OffsetDateTime.ofInstant(filter.resolvedFrom(), ZoneOffset.UTC));
+        }
+        if (filter.resolvedTo() != null) {
+            sql.append("  AND i.resolved_at <= :resolvedTo\n");
+            parameters.addValue("resolvedTo", OffsetDateTime.ofInstant(filter.resolvedTo(), ZoneOffset.UTC));
         }
         var q = filter.q();
         if (q != null && q.match() == IncidentFilter.TextMatch.DISPLAY_NUMBER) {

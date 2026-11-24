@@ -74,13 +74,17 @@ public class IncidentController {
             @Parameter(required = true) @RequestParam ListIncidentQueueQuery.State state,
             @Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100", defaultValue = "24"))
             @RequestParam(defaultValue = "24") int pageSize,
-            @Parameter(description = "Opaque token from nextPageToken, valid only with the same state and filters")
-            @RequestParam(required = false) String pageToken) {
+            @Parameter(description = "Opaque token from nextPageToken, valid only with the same state, filters and sort")
+            @RequestParam(required = false) String pageToken,
+            @Parameter(description = "Order, newest first: createdAt (default) or, with state=RESOLVED only, resolvedAt",
+                    schema = @Schema(type = "string", allowableValues = {"createdAt", "resolvedAt"}, defaultValue = "createdAt"))
+            @RequestParam(required = false) String sort) {
         var filter = IncidentFilterParameters.parse(state, request);
-        var page = queue.handle(new ListIncidentQueueQuery(RequestContext.actor(jwt), filter, pageSize,
-                IncidentQueuePageTokens.decode(pageToken, filter)));
-        return new IncidentQueueResource(page.items(), IncidentQueuePageTokens.encode(page.next(), filter), page.total(),
-                AppliedFiltersResource.of(filter));
+        var order = ListIncidentQueueQuery.Sort.parse(sort);
+        var page = queue.handle(new ListIncidentQueueQuery(RequestContext.actor(jwt), filter, order, pageSize,
+                IncidentQueuePageTokens.decode(pageToken, filter, order)));
+        return new IncidentQueueResource(page.items(), IncidentQueuePageTokens.encode(page.next(), filter, order), page.total(),
+                AppliedFiltersResource.of(filter, order));
     }
 
     @GetMapping("/incidents/summary")

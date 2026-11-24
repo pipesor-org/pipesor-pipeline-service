@@ -41,7 +41,7 @@ class StartupContractTests {
             assertThat(context.getEnvironment().getProperty("spring.jpa.hibernate.ddl-auto")).isEqualTo("validate");
             assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.repositories", Integer.class)).isZero();
             assertThat(jdbc.queryForObject("SELECT count(*) FROM audit.audit_events", Integer.class)).isZero();
-            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("9");
+            assertThat(context.getBean(Flyway.class).info().current().getVersion().getVersion()).isEqualTo("10");
         }
     }
 
