@@ -1,5 +1,6 @@
 package org.pipesor.pipeline.incident.application.queries;
 
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -51,34 +52,43 @@ public record IncidentFilter(
     public enum TextMatch { DISPLAY_NUMBER, TEXT }
 
     /**
-     * Free-text query, trimmed. {@code INC-123} or {@code 123} matches the display number exactly; other text is a
-     * case-insensitive partial match on the repository full name or the workflow name.
+     * Free-text query, normalized (NFKC, trimmed, inner whitespace collapsed). {@code INC-123} or {@code 123} matches the
+     * display number exactly. Other text is split into words: an incident matches when every word is a case-insensitive
+     * substring of the repository full name or the workflow name (each word may match a different field).
      */
-    public record TextQuery(String value, TextMatch match, Long displayNumber) {
+    public record TextQuery(String value, TextMatch match, Long displayNumber, List<String> words) {
         public static final int MIN_TEXT_LENGTH = 2;
         public static final int MAX_LENGTH = 100;
         private static final Pattern DISPLAY_NUMBER = Pattern.compile("(?i)(?:INC-)?([0-9]{1,18})");
+        private static final Pattern WHITESPACE = Pattern.compile("\\s+");
 
         public static TextQuery parse(String raw) {
             if (raw == null) throw new InvalidIncidentFilter("q must not be empty");
-            var value = raw.strip();
+            if (raw.codePoints().anyMatch(Character::isISOControl)) throw new InvalidIncidentFilter("q has control characters");
+            var value = WHITESPACE.matcher(Normalizer.normalize(raw, Normalizer.Form.NFKC).strip()).replaceAll(" ");
             int length = value.codePointCount(0, value.length());
             if (length == 0 || length > MAX_LENGTH) throw new InvalidIncidentFilter("q length out of bounds");
-            if (value.codePoints().anyMatch(Character::isISOControl)) throw new InvalidIncidentFilter("q has control characters");
             var number = DISPLAY_NUMBER.matcher(value);
-            if (number.matches()) return new TextQuery(value, TextMatch.DISPLAY_NUMBER, Long.parseLong(number.group(1)));
+            if (number.matches()) return new TextQuery(value, TextMatch.DISPLAY_NUMBER, Long.parseLong(number.group(1)), List.of());
             if (length < MIN_TEXT_LENGTH) throw new InvalidIncidentFilter("q is too short");
-            return new TextQuery(value, TextMatch.TEXT, null);
+            var words = new ArrayList<String>();
+            for (var word : value.toLowerCase(Locale.ROOT).split(" ")) {
+                if (!words.contains(word)) words.add(word);
+            }
+            return new TextQuery(value, TextMatch.TEXT, null, words);
         }
 
         public TextQuery {
             Objects.requireNonNull(value);
             Objects.requireNonNull(match);
-            if ((match == TextMatch.DISPLAY_NUMBER) != (displayNumber != null)) throw new IllegalArgumentException("Inconsistent query");
+            words = List.copyOf(words);
+            if ((match == TextMatch.DISPLAY_NUMBER) != (displayNumber != null) || (match == TextMatch.TEXT) == words.isEmpty()) {
+                throw new IllegalArgumentException("Inconsistent query");
+            }
         }
 
         String canonical() {
-            return match == TextMatch.DISPLAY_NUMBER ? "#" + displayNumber : "~" + value.toLowerCase(Locale.ROOT);
+            return match == TextMatch.DISPLAY_NUMBER ? "#" + displayNumber : "~" + String.join(" ", words);
         }
     }
 

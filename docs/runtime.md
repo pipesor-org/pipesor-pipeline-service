@@ -76,8 +76,8 @@ exception messages are never returned.
 repeatable filters of [ADR-027](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-027-incident-queue-read-model.md):
 `pipelineId`, `repositoryId` (GitHub id), `severity` (`CRITICAL|HIGH|MEDIUM|LOW|UNCLASSIFIED`), `stage`,
 `status` (only those of the state), `diagnosis` (`PENDING|CONFIRMED|CORRECTED|REJECTED|ABSENT`) and `q`
-(`INC-123`/`123` matches `displayNumber`; other text, 2–100 characters, matches the repository full name
-or workflow name case-insensitively). Values of one filter are OR-ed, filters are AND-ed. The exact
+(`INC-123`/`123` matches `displayNumber`; other text, 2–100 characters, is NFKC-normalized and split
+into words, and every word must appear, case-insensitively, in the repository full name or the workflow name). Values of one filter are OR-ed, filters are AND-ed. The exact
 contract is in [MVP HTTP API v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/mvp-http-api-v1.md#incident-queue-filters).
 
 `state` is required: `OPEN` covers every active incident (`OPEN`, `IN_REMEDIATION` and

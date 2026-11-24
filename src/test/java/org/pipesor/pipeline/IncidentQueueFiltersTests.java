@@ -172,6 +172,13 @@ class IncidentQueueFiltersTests extends PostgresIntegrationTest {
         assertThat(byText.get("appliedFilters").get("qMatch").asString()).isEqualTo("TEXT");
         assertThat(ids(get("/api/v1/incidents?state=OPEN&q=ci"))).containsExactly(ci);
         assertThat(ids(get("/api/v1/incidents?state=OPEN&q={q}", "deploy PROD"))).containsExactly(deploy);
+        // Words are AND-ed and each may match either field; the query and the fields are NFKC-normalized.
+        assertThat(ids(get("/api/v1/incidents?state=OPEN&q={q}", "payments   prod"))).containsExactly(deploy);
+        assertThat(ids(get("/api/v1/incidents?state=OPEN&q={q}", "acme ci"))).containsExactly(ci);
+        assertThat(ids(get("/api/v1/incidents?state=OPEN&q={q}", "payments ci"))).isEmpty();
+        var normalized = get("/api/v1/incidents?state=OPEN&q={q}", " \uFF30\uFF21\uFF39\u3000 deploy ");
+        assertThat(ids(normalized)).containsExactly(deploy);
+        assertThat(normalized.get("appliedFilters").get("q").asString()).isEqualTo("PAY deploy");
         // LIKE wildcards are literal text.
         assertThat(ids(get("/api/v1/incidents?state=OPEN&q=web_app"))).containsExactly(ci);
         assertThat(ids(get("/api/v1/incidents?state=OPEN&q={q}", "web%app"))).isEmpty();

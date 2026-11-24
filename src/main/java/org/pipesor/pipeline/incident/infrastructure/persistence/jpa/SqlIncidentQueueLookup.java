@@ -135,8 +135,12 @@ public class SqlIncidentQueueLookup implements IncidentQueueLookup {
             sql.append("  AND i.display_number = :displayNumber\n");
             parameters.addValue("displayNumber", q.displayNumber());
         } else if (q != null) {
-            sql.append("  AND (r.full_name ILIKE :text ESCAPE '\\' OR p.workflow_name ILIKE :text ESCAPE '\\')\n");
-            parameters.addValue("text", "%" + likeEscaped(q.value()) + "%");
+            // Every word must appear in the repository full name or the workflow name (NFKC on both sides).
+            for (int index = 0; index < q.words().size(); index++) {
+                sql.append("  AND (normalize(r.full_name, NFKC) ILIKE :word").append(index).append(" ESCAPE '\\'")
+                        .append(" OR normalize(p.workflow_name, NFKC) ILIKE :word").append(index).append(" ESCAPE '\\')\n");
+                parameters.addValue("word" + index, "%" + likeEscaped(q.words().get(index)) + "%");
+            }
         }
         return sql.toString();
     }
