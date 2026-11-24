@@ -104,7 +104,7 @@ class IncidentQueueAndEntitlementTests extends PostgresIntegrationTest {
         client.get().uri("/api/v1/incidents?state=RESOLVED").header("Authorization", ApiContractTests.bearer())
                 .exchange().expectStatus().isOk().expectBody().jsonPath("$.items").isEmpty();
         client.get().uri("/api/v1/incidents?state=OPEN&pageToken=bogus").header("Authorization", ApiContractTests.bearer())
-                .exchange().expectStatus().isBadRequest().expectBody().jsonPath("$.code").isEqualTo("INVALID_REQUEST");
+                .exchange().expectStatus().isBadRequest().expectBody().jsonPath("$.code").isEqualTo("INVALID_PAGE_TOKEN");
         client.get().uri("/api/v1/incidents?state=OPEN&pageSize=101").header("Authorization", ApiContractTests.bearer())
                 .exchange().expectStatus().isBadRequest();
         client.get().uri("/api/v1/incidents").header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isBadRequest();

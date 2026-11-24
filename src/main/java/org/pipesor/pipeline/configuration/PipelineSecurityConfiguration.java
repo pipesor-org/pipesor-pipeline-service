@@ -3,6 +3,7 @@ package org.pipesor.pipeline.configuration;
 import java.util.List;
 import org.pipesor.pipeline.execution.interfaces.rest.validation.OperationalReferenceCheckController;
 import org.pipesor.pipeline.incident.interfaces.rest.DiagnosisEntitlementController;
+import org.pipesor.pipeline.incident.interfaces.rest.DiagnosisSummaryController;
 import org.pipesor.pipeline.shared.security.PlatformAuthorities;
 import org.pipesor.pipeline.shared.security.PlatformSecurityConfiguration.PlatformRoutes;
 import org.springframework.beans.factory.annotation.Value;
@@ -33,6 +34,9 @@ public class PipelineSecurityConfiguration {
                     PlatformAuthorities.workload("log-event", "Evidence.Check")));
             routes.requestMatchers(HttpMethod.POST, DiagnosisEntitlementController.PATH).access(
                     PlatformAuthorities.workloadForSubject("recommendation", "Recommendation.DiagnosisEntitlements.Resolve"));
+            // ADR-027: Recommendation projects diagnosis summaries; machine-to-machine, no subject token.
+            routes.requestMatchers(HttpMethod.PUT, DiagnosisSummaryController.PATTERN).access(
+                    PlatformAuthorities.workload("recommendation", "Recommendation.DiagnosisSummaries.Write"));
         };
     }
 

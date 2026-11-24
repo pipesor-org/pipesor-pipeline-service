@@ -28,7 +28,7 @@ JWKS URI is not HTTPS (except loopback under `local`).
 | `PIPESOR_TENANT_ID`, `PIPESOR_WORKLOAD_ID` (`pipeline`), `PIPESOR_SECURITY_AUDIENCE` (`urn:pipesor:api:pipeline`) | identity |
 | `PIPESOR_SIGNING_KEY_FILE` or `PIPESOR_SIGNING_KEY_ID` | workload signing key, published at `/.well-known/jwks.json` |
 | `PIPESOR_SECURITY_SESSION_JWKSURI` | Ingestion's session JWKS |
-| `PIPESOR_SECURITY_TRUSTEDWORKLOADS_<n>_ID/_JWKSURI/_ROLES` | inbound callers: `correlation` (`Correlation.OperationalReferences.Check`), `log-event` (`Evidence.Check`), `recommendation` (`Recommendation.DiagnosisEntitlements.Resolve`) |
+| `PIPESOR_SECURITY_TRUSTEDWORKLOADS_<n>_ID/_JWKSURI/_ROLES` | inbound callers: `correlation` (`Correlation.OperationalReferences.Check`), `log-event` (`Evidence.Check`), `recommendation` (`Recommendation.DiagnosisEntitlements.Resolve,Recommendation.DiagnosisSummaries.Write`) |
 | `PIPESOR_ENDPOINTS_INGESTION` | Ingestion base URL (GitHub facts, machine-scope checks, capture workflow scopes) |
 | `PIPESOR_CAPTURE_SCOPE_RECONCILE_INTERVAL`, `PIPESOR_CAPTURE_SCOPE_RECONCILE_ENABLED` | capture scope reconciliation (ADR-023): default `5m` (minimum 10 s) and `true`; tests disable it |
 | `PIPESOR_DATABASE_URL`, `_USERNAME`, `_PASSWORD` (local only) | PostgreSQL database `pipesor` |
@@ -60,6 +60,7 @@ Hibernate uses `ddl-auto: validate`.
 | `/api/v1/**` | session token with scope `Pipeline.Access`, then ADR-020 grant and current GitHub access per resource |
 | `POST /internal/v1/evidence/operational-reference-checks` | workload `correlation` with `Correlation.OperationalReferences.Check`, or workload `log-event` with `Evidence.Check` |
 | `POST /internal/v1/diagnosis-read-entitlements` | workload `recommendation` with `Recommendation.DiagnosisEntitlements.Resolve` plus `X-Pipesor-Subject-Token` |
+| `PUT /internal/v1/incidents/{incidentId}/diagnosis-summary` | workload `recommendation` with `Recommendation.DiagnosisSummaries.Write` (no subject token, ADR-027) |
 
 Everything else is denied. Missing or invalid tokens return 401, a valid token without the
 route's caller, role or scope returns 403; both are `application/problem+json`
@@ -71,15 +72,49 @@ exception messages are never returned.
 
 ### Incident queue
 
-`GET /api/v1/incidents?state=OPEN|RESOLVED&pageSize=1..100 (default 24)&pageToken=`
+`GET /api/v1/incidents?state=OPEN|RESOLVED&pageSize=1..100 (default 24)&pageToken=` plus the optional,
+repeatable filters of [ADR-027](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/decisions/ADR-027-incident-queue-read-model.md):
+`pipelineId`, `repositoryId` (GitHub id), `severity` (`CRITICAL|HIGH|MEDIUM|LOW|UNCLASSIFIED`), `stage`,
+`status` (only those of the state), `diagnosis` (`PENDING|CONFIRMED|CORRECTED|REJECTED|ABSENT`) and `q`
+(`INC-123`/`123` matches `displayNumber`; other text, 2–100 characters, matches the repository full name
+or workflow name case-insensitively). Values of one filter are OR-ed, filters are AND-ed. The exact
+contract is in [MVP HTTP API v1](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/architecture/contracts/mvp-http-api-v1.md#incident-queue-filters).
 
 `state` is required: `OPEN` covers every active incident (`OPEN`, `IN_REMEDIATION` and
-`VERIFICATION`), `RESOLVED` covers `RESOLVED`. Diagnosis validation is not a lifecycle state: the
-dashboard's Needs validation view is the `RESOLVED` queue joined with Recommendation's review status. Candidates are incidents of pipelines on which the
-caller holds any grant and whose repository current GitHub facts keep readable and admitted; this
-filter runs in SQL before paging. Order is `createdAt` descending, then id. Response:
-`{"items": [IncidentView...], "nextPageToken": "opaque" | null}`, items identical to
-`/api/v1/pipelines/{id}/incidents`.
+`VERIFICATION`), `RESOLVED` covers `RESOLVED`. Candidates are incidents of pipelines on which the
+caller holds any grant and whose repository current GitHub facts keep readable and admitted; a
+`repositoryId` filter is intersected with that set, and every filter is an SQL predicate of the same
+statement, before paging and counting. Order is `createdAt` descending, then id. Response:
+`{"items": [IncidentView...], "nextPageToken": "opaque" | null, "total": n, "appliedFilters": {...}}`.
+The page and `total` are read in one repeatable-read snapshot. Page tokens (`q2`) carry a digest of the
+normalized state and filters; another listing's token, or a malformed one, is `400 INVALID_PAGE_TOKEN`
+(unbound `q1` tokens are still accepted without filters). Invalid filter values are `400 INVALID_FILTER`.
+
+Every incident read (`/incidents`, `/incidents/{id}`, `/pipelines/{id}/incidents`) adds `repository
+{repositoryId, fullName}`, `workflow {workflowId, name}` and `diagnosis {status, probableCause,
+createdAt} | null` from `ops.incident_diagnoses`.
+
+`GET /api/v1/incidents/summary` takes the same `state` and filters and returns `total`, `bySeverity`,
+`byStatus` (statuses of the state) and `byDiagnosis`, each summing to `total`.
+`GET /api/v1/insights?from=&to=&top=` computes History Insights over visible incidents resolved in the
+window (default: the last 30 UTC calendar days; at most 366 days; `top` 1–50, default 10).
+
+Indexes (`V9`): `incidents (status, created_at, id)`, `(pipeline_id, status, created_at, id)`,
+`(severity, status)`, `(stage, status)`, `resolved_at` for resolved incidents, grants by
+`(principal_ref, pipeline_id)` and `incident_diagnoses (status)`. The text query uses `ILIKE` over the
+small repository and pipeline tables (no trigram extension).
+
+### Diagnosis summary projection (ADR-027)
+
+`PUT /internal/v1/incidents/{incidentId}/diagnosis-summary` stores Recommendation's current summary
+(`diagnosisId`, `version`, `executionId`, `pipelineId`, `githubRepositoryId`, `status`,
+`reviewRevision`, `reviewedAt`, `probableCause` ≤ 1000 characters, `createdAt`; unknown fields
+rejected) in `ops.incident_diagnoses`. It is applied only when the execution is the incident's ORIGIN
+execution and the pipeline and repository are the incident's (`409 SCOPE_MISMATCH` otherwise;
+`404 INCIDENT_NOT_FOUND`; `400 INVALID_REQUEST`). Writes are monotonic on `(version,
+reviewRevision)`; `200` echoes the summary with `applied: false` when a same-or-later one is stored.
+No row means `ABSENT`. Recommendation feeds it from a transactional outbox, so the queue converges
+after outages.
 
 ### Diagnosis read entitlement
 

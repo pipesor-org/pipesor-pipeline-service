@@ -32,7 +32,15 @@ import org.pipesor.pipeline.execution.application.services.ExecutionQueryService
 import org.pipesor.pipeline.execution.application.services.ExecutionSnapshotService;
 import org.pipesor.pipeline.incident.application.commandhandlers.OpenIncidentCommandHandler;
 import org.pipesor.pipeline.incident.application.commandhandlers.TransitionIncidentCommandHandler;
+import org.pipesor.pipeline.incident.application.commandhandlers.RecordDiagnosisSummaryCommandHandler;
+import org.pipesor.pipeline.incident.application.ports.DiagnosisSummaryStore;
 import org.pipesor.pipeline.incident.application.ports.IncidentLookup;
+import org.pipesor.pipeline.incident.application.ports.IncidentQueueLookup;
+import org.pipesor.pipeline.incident.application.queryhandlers.IncidentSummaryQueryHandler;
+import org.pipesor.pipeline.incident.application.queryhandlers.InsightsQueryHandler;
+import org.pipesor.pipeline.incident.application.services.DiagnosisSummaryService;
+import org.pipesor.pipeline.incident.application.services.IncidentSummaryService;
+import org.pipesor.pipeline.incident.application.services.InsightsService;
 import org.pipesor.pipeline.incident.application.ports.IncidentOriginLookup;
 import org.pipesor.pipeline.incident.application.ports.IncidentStore;
 import org.pipesor.pipeline.incident.application.ports.VerificationLookup;
@@ -68,8 +76,23 @@ public class OperationsConfiguration {
     }
 
     @Bean
-    IncidentQueueService incidentQueueService(HumanPipelineAccess human, IncidentLookup lookup) {
+    IncidentQueueService incidentQueueService(HumanPipelineAccess human, IncidentQueueLookup lookup) {
         return new IncidentQueueQueryHandler(human::visibleRepositoryIds, lookup);
+    }
+
+    @Bean
+    IncidentSummaryService incidentSummaryService(HumanPipelineAccess human, IncidentQueueLookup lookup) {
+        return new IncidentSummaryQueryHandler(human::visibleRepositoryIds, lookup);
+    }
+
+    @Bean
+    InsightsService insightsService(HumanPipelineAccess human, IncidentQueueLookup lookup) {
+        return new InsightsQueryHandler(human::visibleRepositoryIds, lookup);
+    }
+
+    @Bean
+    DiagnosisSummaryService diagnosisSummaryService(DiagnosisSummaryStore store, Clock clock) {
+        return new RecordDiagnosisSummaryCommandHandler(store, clock);
     }
 
     @Bean

@@ -6,12 +6,12 @@ import java.util.Set;
 import java.util.UUID;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
 
-/** Cross-pipeline incident queue for one actor, newest first, keyset-paged after {@code after}. */
-public record ListIncidentQueueQuery(String actorRef, State state, int pageSize, Cursor after) {
+/** Cross-pipeline incident queue for one actor, newest first, keyset-paged after {@code after}, with filters. */
+public record ListIncidentQueueQuery(String actorRef, IncidentFilter filter, int pageSize, Cursor after) {
     /**
      * Lifecycle queues: OPEN is every active incident (open, in remediation or in verification) and RESOLVED the
-     * resolved ones. Diagnosis validation is not a lifecycle state: the dashboard's Needs validation view is the
-     * RESOLVED queue joined with Recommendation's review status, which Pipeline does not own.
+     * resolved ones. Diagnosis validation is not a lifecycle state: Needs validation is the RESOLVED queue filtered by
+     * the diagnosis status that Recommendation projects into Pipeline (ADR-027).
      */
     public enum State {
         OPEN(Set.of(IncidentStatus.OPEN, IncidentStatus.IN_REMEDIATION, IncidentStatus.VERIFICATION)),
@@ -29,7 +29,7 @@ public record ListIncidentQueueQuery(String actorRef, State state, int pageSize,
 
     public ListIncidentQueueQuery {
         Objects.requireNonNull(actorRef);
-        Objects.requireNonNull(state);
+        Objects.requireNonNull(filter);
         if (pageSize < 1 || pageSize > 100) throw new IllegalArgumentException("pageSize must be between 1 and 100");
     }
 }
