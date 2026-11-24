@@ -77,7 +77,7 @@ The frontend-facing pipeline responses consistently include repositoryId, github
 | PUT /api/v1/pipelines/{id}/settings | Existing complete replacement retained: mandatory criticality/monitoringStatus; omitted or null optional fields clear their values. |
 | PUT /api/v1/pipelines/{id}/policy | Replace criticality, monitoringStatus and environment. All three keys must be present; environment:null clears it. Preserve ownership, including concurrent updates. |
 | PUT /api/v1/pipelines/{id}/ownership | Replace responsibleTeamRef and responsibleTeamNameSnapshot. Both keys must be present; explicit null clears that value. Preserve policy, including concurrent updates. No pipeline owners are introduced. |
-| PUT /api/v1/pipelines/{id}/grants/{principalRef}/{capability}; DELETE counterpart | CONFIGURE plus current administration. Granting additionally checks the recipient's link/access, and administration for CONFIGURE. Revocation does not require the recipient to remain connected. |
+| PUT /api/v1/pipelines/{id}/grants/{principalRef}/{capability}; DELETE counterpart | CONFIGURE plus current administration. Granting additionally checks the recipient's link/access, and administration for CONFIGURE. Revocation does not require the recipient to remain connected. Revoking the pipeline's last CONFIGURE grant, also one's own, is `409 LAST_CONFIGURE_GRANT` (ADR-028). |
 | GET /api/v1/pipelines/{id}/grants | CONFIGURE plus current administration. Lists stored grant identities/capabilities, not GitHub roles or user profiles. |
 | GET /api/v1/pipelines/{id}/activities | CONFIGURE plus current administration. Sanitized pipeline-only audit; historyComplete=false. Old missing fields remain absent. |
 

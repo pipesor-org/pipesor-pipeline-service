@@ -3,6 +3,7 @@ package org.pipesor.pipeline.catalog.application.commandhandlers;
 import java.time.Clock;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Supplier;
 import org.pipesor.pipeline.catalog.application.commands.ChangePipelineAccessCommand;
@@ -11,6 +12,7 @@ import org.pipesor.pipeline.catalog.application.ports.PipelineAccess;
 import org.pipesor.pipeline.catalog.application.ports.PipelineGrantStore;
 import org.pipesor.pipeline.catalog.application.ports.PipelineSettingsStore;
 import org.pipesor.pipeline.catalog.application.queries.PipelineView;
+import org.pipesor.pipeline.catalog.application.services.LastConfigureGrant;
 import org.pipesor.pipeline.catalog.application.services.PipelineAuditMetadata;
 import org.pipesor.pipeline.catalog.application.services.PipelineConfigurationService;
 import org.pipesor.pipeline.catalog.domain.model.valueobjects.AccessCapability;
@@ -55,7 +57,14 @@ public final class ConfigurePipelineCommandHandler implements PipelineConfigurat
 
     @Override
     public boolean handle(ChangePipelineAccessCommand command) {
+        // Lock before the actor's own grant, so two administrators revoking each other run one after the other.
+        grants.lock(command.pipelineId());
         access.require(command.actorRef(), command.pipelineId(), AccessCapability.CONFIGURE);
+        // ADR-028: someone must keep CONFIGURE, otherwise nobody could grant access to the pipeline again.
+        if (!command.grant() && command.capability() == AccessCapability.CONFIGURE
+                && grants.holders(command.pipelineId(), AccessCapability.CONFIGURE).equals(Set.of(command.principalRef()))) {
+            throw new LastConfigureGrant();
+        }
         var now = clock.instant().truncatedTo(ChronoUnit.MICROS);
         boolean changed = grants.change(command, ids.get(), now);
         if (changed) {

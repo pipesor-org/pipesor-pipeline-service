@@ -3,6 +3,7 @@ package org.pipesor.pipeline.catalog.interfaces.rest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.headers.Header;
+import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -122,6 +123,11 @@ public class PipelineController {
     }
 
     @DeleteMapping("/{id}/grants/{principalRef}/{capability}")
+    @Operation(summary = "Revoke one exact capability",
+            description = "CONFIGURE plus current GitHub administration. Repeating it is a no-op. The pipeline keeps at least one CONFIGURE grant (ADR-028).")
+    @ApiResponse(responseCode = "204", description = "Revoked, or the principal did not hold the capability")
+    @ApiResponse(responseCode = "409", description = "LAST_CONFIGURE_GRANT: the pipeline's last CONFIGURE grant cannot be revoked, also by its holder",
+            content = @Content(mediaType = "application/problem+json"))
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void revoke(@PathVariable UUID id, @PathVariable String principalRef, @PathVariable AccessCapability capability,
             @AuthenticationPrincipal Jwt jwt, @RequestAttribute(CorrelationFilter.ATTRIBUTE) String correlation) {

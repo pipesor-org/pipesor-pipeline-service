@@ -7,6 +7,7 @@ import java.util.LinkedHashMap;
 import java.util.NoSuchElementException;
 import org.pipesor.pipeline.catalog.application.services.GitHubConnectionRequired;
 import org.pipesor.pipeline.catalog.application.services.GitHubVerificationUnavailable;
+import org.pipesor.pipeline.catalog.application.services.LastConfigureGrant;
 import org.pipesor.pipeline.catalog.application.services.PipelineRegistrationConflict;
 import org.pipesor.pipeline.incident.application.commands.DiagnosisSummaryScopeMismatch;
 import org.pipesor.pipeline.incident.application.queries.InvalidIncidentFilter;
@@ -84,6 +85,12 @@ public class ApiExceptionHandler {
     ResponseEntity<ProblemDetail> summaryMismatch(DiagnosisSummaryScopeMismatch exception, HttpServletRequest request) {
         LOG.warn("Diagnosis summary does not bind to its incident: correlation={}", correlation(request));
         return problem(409, "SCOPE_MISMATCH", "Diagnosis summary does not bind to the incident", request);
+    }
+
+    @ExceptionHandler(LastConfigureGrant.class)
+    ResponseEntity<ProblemDetail> lastConfigureGrant(LastConfigureGrant exception, HttpServletRequest request) {
+        LOG.info("Refused to revoke the last CONFIGURE grant: correlation={}", correlation(request));
+        return problem(409, "LAST_CONFIGURE_GRANT", "A pipeline keeps at least one CONFIGURE grant", request);
     }
 
     @ExceptionHandler({PipelineRegistrationConflict.class, InvalidIncidentTransition.class, DataIntegrityViolationException.class})
