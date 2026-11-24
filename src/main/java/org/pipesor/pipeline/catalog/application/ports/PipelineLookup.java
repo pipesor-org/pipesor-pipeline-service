@@ -11,4 +11,8 @@ public interface PipelineLookup {
     Optional<PipelineView> findById(UUID id);
     List<PipelineView> listVisible(String actorRef, Set<String> allowedRepositoryIds, int offset, int limit);
     List<PipelineView> list(UUID repositoryId, int offset, int limit);
+    /** Every pipeline registered on the GitHub repository, by numeric workflow id; identities only. */
+    List<Registration> registrations(String githubRepositoryId);
+
+    record Registration(UUID pipelineId, String githubWorkflowId) {}
 }

@@ -6,7 +6,9 @@ import org.pipesor.pipeline.catalog.application.ports.PipelineLookup;
 import org.pipesor.pipeline.catalog.application.queries.GetPipelineQuery;
 import org.pipesor.pipeline.catalog.application.queries.ListPipelinesQuery;
 import org.pipesor.pipeline.catalog.application.queries.ListVisiblePipelinesQuery;
+import org.pipesor.pipeline.catalog.application.queries.ListRepositoryRegistrationsQuery;
 import org.pipesor.pipeline.catalog.application.queries.PipelineView;
+import org.pipesor.pipeline.catalog.application.queries.RepositoryRegistrationsView;
 import org.pipesor.pipeline.catalog.application.services.HumanPipelineAccess;
 import org.pipesor.pipeline.catalog.application.services.PipelineQueryService;
 
@@ -31,6 +33,10 @@ public class PipelineQueryHandler implements PipelineQueryService {
     @Override
     public List<PipelineView> handle(ListVisiblePipelinesQuery query) {
         return human.list(query.actorRef(), query.offset(), query.limit());
+    }
+    @Override
+    public RepositoryRegistrationsView handle(ListRepositoryRegistrationsQuery query) {
+        return human.registrations(query.actorRef(), query.githubRepositoryId());
     }
 
 }

@@ -224,6 +224,7 @@ Explicitly approved by the user in this session for the existing dashboard → P
 | GET /api/v1/pipelines/{id}/grants; GET /api/v1/pipelines/{id}/activities | CONFIGURE plus current GitHub administration; activities explicitly partial. |
 | GET /api/v1/pipelines?offset=0&limit=25 | VIEW, applied in SQL before pagination; return only authorized pipelines. |
 | GET /api/v1/pipelines/{id} | VIEW on id. |
+| GET /api/v1/pipelines/registrations?repositoryId= | Current GitHub read of the admitted repository, no AIOps grant (ADR-028); pipeline id, numeric workflow id and the caller's effective VIEW only. |
 | GET /api/v1/pipelines/{id}/executions; GET /api/v1/executions/{id}; GET /api/v1/executions/{id}/stages | VIEW on the owning pipeline. |
 | GET /api/v1/pipelines/{id}/incidents; GET /api/v1/incidents/{id}; GET /api/v1/incidents/{id}/runs | VIEW on the incident's pipeline. |
 | GET /api/v1/incidents?state=OPEN\|RESOLVED&pageSize&pageToken | Grants and current GitHub read applied in SQL before keyset paging; `{items, nextPageToken}` ([runtime.md](runtime.md#incident-queue)). |
