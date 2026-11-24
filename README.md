@@ -124,7 +124,6 @@ PRs are verified and scanned but never published. A ruleset protects `main`: cha
 
 The image check verifies user `10001:10001`, rejection without runtime configuration, migrations/startup with disposable PostgreSQL under the `local` profile with a disposable signing key, readiness and HTTP 401 for an unauthenticated business request. It creates uniquely named local containers/network, publishes only a random localhost port and removes its resources on exit. Its synthetic credentials, signing key and `local` profile are test setup. Container defaults bind `0.0.0.0:8080`; they do not approve cloud ingress, probes or a production migration mechanism. The base image is pinned by digest; dependency/base-image updates require re-verification. The Docker context includes only the packaged JAR and Dockerfile.
 
-`tools/retention.py` keeps the local GHCR retention preview: it proposes old, unprotected technical candidates and has no deletion capability; registry cleanup still needs a reviewed policy.
 
 Local checks before opening a PR (Java 25, Python 3, Bun 1.4.4, Docker):
 
@@ -146,6 +145,8 @@ roll back with a new reviewed plan for the earlier digest.
 shared [release action](https://github.com/pipesor-org/pipesor-ci/tree/main/actions/release) to name an existing
 candidate digest `vX.Y.Z[-rc.N]` with a GitHub Release, never rebuilding; stable requires retained preprod validation
 for the same digest. See the [shared CI/CD guide](https://github.com/pipesor-org/pipesor-docs/blob/main/docs/development/cicd.md).
+
+**Registry retention.** [Registry retention](.github/workflows/registry-retention.yml) runs weekly through the shared [pipesor-ci workflow](https://github.com/pipesor-org/pipesor-ci#registry-retention): it keeps every deployed or recently deployed digest (pipesor-iac `images.json` history), release digests, the newest and recent candidates and the children of kept image indexes, and reports the rest. It is a dry run until the repository variable `REGISTRY_RETENTION_DELETE` is `true`.
 
 ## Optional Codex setup
 
