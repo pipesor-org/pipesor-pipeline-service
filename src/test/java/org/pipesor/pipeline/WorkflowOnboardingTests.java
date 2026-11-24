@@ -295,6 +295,52 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void theLastConfigureGrantCannotBeRevokedEvenByItsHolder() throws Exception {
+        var pipeline = register(REPO, WORKFLOW);
+        var grants = "/api/v1/pipelines/" + pipeline.id() + "/grants/";
+        client.delete().uri(grants + ACTOR + "/CONFIGURE").header("Authorization", ApiContractTests.bearer()).exchange()
+                .expectStatus().isEqualTo(409).expectBody().jsonPath("$.code").isEqualTo("LAST_CONFIGURE_GRANT");
+        client.put().uri(grants + OTHER + "/CONFIGURE").header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isNoContent();
+        // With two holders either may go; the remaining one is the last again.
+        client.delete().uri(grants + ACTOR + "/CONFIGURE").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange()
+                .expectStatus().isNoContent();
+        client.delete().uri(grants + OTHER + "/CONFIGURE").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange()
+                .expectStatus().isEqualTo(409).expectBody().jsonPath("$.code").isEqualTo("LAST_CONFIGURE_GRANT");
+        // Only CONFIGURE is guarded.
+        client.put().uri(grants + ACTOR + "/VIEW").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isNoContent();
+        client.delete().uri(grants + ACTOR + "/VIEW").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isNoContent();
+        assertThat(jdbc.queryForList("SELECT principal_ref FROM ops.pipeline_access_grants WHERE pipeline_id = ? AND capability = 'CONFIGURE'",
+                String.class, pipeline.id())).containsExactly(OTHER);
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM audit.audit_events WHERE entity_id = ? AND action = 'REVOKE'",
+                Integer.class, pipeline.id().toString())).isEqualTo(2);
+    }
+
+    @Test
+    void administratorsRevokingEachOtherConcurrentlyLeaveOneConfigureGrant() throws Exception {
+        var pipeline = register(REPO, WORKFLOW);
+        var grants = "/api/v1/pipelines/" + pipeline.id() + "/grants/";
+        client.put().uri(grants + OTHER + "/CONFIGURE").header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isNoContent();
+        var ready = new CountDownLatch(2);
+        try (var workers = Executors.newFixedThreadPool(2)) {
+            Callable<Integer> actorRevokesOther = () -> {
+                ready.countDown(); if (!ready.await(5, TimeUnit.SECONDS)) { throw new AssertionError("Missing competing revocation"); }
+                return client.delete().uri(grants + OTHER + "/CONFIGURE").header("Authorization", ApiContractTests.bearer())
+                        .exchange().expectBody().returnResult().getStatus().value();
+            };
+            Callable<Integer> otherRevokesActor = () -> {
+                ready.countDown(); if (!ready.await(5, TimeUnit.SECONDS)) { throw new AssertionError("Missing competing revocation"); }
+                return client.delete().uri(grants + ACTOR + "/CONFIGURE").header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER))
+                        .exchange().expectBody().returnResult().getStatus().value();
+            };
+            var first = workers.submit(actorRevokesOther); var second = workers.submit(otherRevokesActor);
+            // The loser no longer holds CONFIGURE when its turn comes.
+            assertThat(List.of(first.get(15, TimeUnit.SECONDS), second.get(15, TimeUnit.SECONDS))).containsExactlyInAnyOrder(204, 403);
+        }
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM ops.pipeline_access_grants WHERE pipeline_id = ? AND capability = 'CONFIGURE'",
+                Integer.class, pipeline.id())).isEqualTo(1);
+    }
+
+    @Test
     void sectionUpdatesAreConcurrentAndSettingsRetainsReplacementCompatibility() throws Exception {
         var pipeline = register(REPO, WORKFLOW);
         var path = "/api/v1/pipelines/" + pipeline.id();

@@ -41,6 +41,20 @@ public class SqlPipelineAccess implements PipelineAccess, PipelineGrantStore {
         }
     }
     @Override
+    public void lock(UUID pipelineId) {
+        // NO KEY UPDATE: serializes grant changes without blocking rows that only reference the pipeline.
+        jdbc.queryForList("SELECT id FROM ops.pipelines WHERE id = ? FOR NO KEY UPDATE", UUID.class, pipelineId);
+    }
+
+    @Override
+    public Set<String> holders(UUID pipelineId, AccessCapability capability) {
+        return Set.copyOf(jdbc.queryForList("""
+                SELECT principal_ref FROM ops.pipeline_access_grants
+                WHERE pipeline_id = ? AND capability::text = ?
+                """, String.class, pipelineId, capability.name()));
+    }
+
+    @Override
     public boolean change(ChangePipelineAccessCommand command,
                           UUID grantId, Instant now) {
         if (command.grant()) {
