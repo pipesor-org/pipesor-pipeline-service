@@ -421,6 +421,38 @@ class WorkflowOnboardingTests extends PostgresIntegrationTest {
     }
 
     @Test
+    void readersWithoutGrantsLearnOnlyWhichWorkflowsAreMonitored() throws Exception {
+        var build = register(REPO, WORKFLOW);
+        var deploy = register(REPO, SECOND_WORKFLOW);
+        var uri = "/api/v1/pipelines/registrations?repositoryId=" + REPO;
+        github.allow(OTHER, REPO, false);
+        client.get().uri(uri).header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.repositoryId").isEqualTo(REPO).jsonPath("$.items.length()").isEqualTo(2)
+                .jsonPath("$.items[0].pipelineId").isEqualTo(build.id().toString()).jsonPath("$.items[0].githubWorkflowId").isEqualTo(WORKFLOW)
+                .jsonPath("$.items[0].accessible").isEqualTo(false).jsonPath("$.items[0].workflowName").doesNotExist()
+                .jsonPath("$.items[1].pipelineId").isEqualTo(deploy.id().toString()).jsonPath("$.items[1].accessible").isEqualTo(false);
+        client.get().uri(uri).header("Authorization", ApiContractTests.bearer()).exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.items[0].accessible").isEqualTo(true).jsonPath("$.items[1].accessible").isEqualTo(true);
+        client.get().uri("/api/v1/pipelines/registrations?repositoryId=" + SECOND_REPO).header("Authorization", ApiContractTests.bearer())
+                .exchange().expectStatus().isOk().expectBody().jsonPath("$.items.length()").isEqualTo(0);
+        // A stored grant without current read access is not accessible, and without read access nothing is disclosed.
+        grant(build.id(), OTHER, "VIEW");
+        github.facts(OTHER, REPO, new GitHubConnector.RepositoryAccess(REPO, "5001", true, false, false));
+        client.get().uri(uri).header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isForbidden()
+                .expectBody().jsonPath("$.code").isEqualTo("ACCESS_DENIED");
+        github.unlink(OTHER);
+        client.get().uri(uri).header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isForbidden()
+                .expectBody().jsonPath("$.code").isEqualTo("GITHUB_CONNECTION_REQUIRED");
+        for (var query : List.of("", "?repositoryId=abc", "?repositoryId=0", "?repositoryId=" + REPO + "&repositoryId=" + SECOND_REPO)) {
+            client.get().uri("/api/v1/pipelines/registrations" + query).header("Authorization", ApiContractTests.bearer()).exchange()
+                    .expectStatus().isBadRequest().expectBody().jsonPath("$.code").isEqualTo("INVALID_REQUEST");
+        }
+        github.allow(OTHER, REPO, false);
+        client.get().uri(uri).header("Authorization", ApiContractTests.bearerFor(OTHER_GITHUB_USER)).exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.items[0].accessible").isEqualTo(true).jsonPath("$.items[1].accessible").isEqualTo(false);
+    }
+
+    @Test
     void rechecksALocalGrantRevokedWhileTheConnectorIsVerifyingAccess() throws Exception {
         var pipeline = register(REPO, WORKFLOW);
         github.accessOverride = proof -> {

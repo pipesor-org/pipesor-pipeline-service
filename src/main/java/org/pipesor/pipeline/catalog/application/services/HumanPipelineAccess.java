@@ -10,6 +10,7 @@ import org.pipesor.pipeline.catalog.application.ports.GitHubConnector;
 import org.pipesor.pipeline.catalog.application.ports.PipelineAccess;
 import org.pipesor.pipeline.catalog.application.ports.PipelineLookup;
 import org.pipesor.pipeline.catalog.application.queries.PipelineView;
+import org.pipesor.pipeline.catalog.application.queries.RepositoryRegistrationsView;
 import org.pipesor.pipeline.catalog.domain.model.valueobjects.AccessCapability;
 
 /** External preflight precedes SQL write transactions; write handlers recheck local grants under lock. */
@@ -57,6 +58,20 @@ public final class HumanPipelineAccess {
         var capabilities = grants.capabilities(actor, page.stream().map(PipelineView::id).collect(Collectors.toSet()));
         return page.stream().map(row -> row.withCapabilities(effective(capabilities.getOrDefault(row.id(), Set.of()),
                 proof.repositories().get(row.githubRepositoryId())))).toList();
+    }
+
+    /**
+     * ADR-028: the monitored workflows of a repository the actor can currently read on GitHub, with or without a grant.
+     * Existence only, as a second registration's 409 already reveals; reading needs no AIOps capability.
+     */
+    public RepositoryRegistrationsView registrations(String actor, String repository) {
+        var proof = github.verify(actor, actor, Set.of(repository), GitHubConnector.Operation.VIEW);
+        github.require(proof, repository, false);
+        var rows = pipelines.registrations(repository);
+        var granted = grants.capabilities(actor, rows.stream().map(PipelineLookup.Registration::pipelineId).collect(Collectors.toSet()));
+        var access = proof.repositories().get(repository);
+        return new RepositoryRegistrationsView(repository, rows.stream().map(row -> new RepositoryRegistrationsView.Registration(
+                row.pipelineId(), row.githubWorkflowId(), !effective(granted.getOrDefault(row.pipelineId(), Set.of()), access).isEmpty())).toList());
     }
 
     /**

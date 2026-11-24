@@ -85,6 +85,15 @@ public class JpaPipelineLookup implements PipelineLookup, PipelineSettingsStore 
     }
 
     @Override
+    public List<Registration> registrations(String githubRepositoryId) {
+        return em.createQuery("""
+                select p.id, p.githubWorkflowId from PipelineJpaEntity p, GitHubRepositoryJpaEntity r
+                where p.repositoryId = r.id and r.githubRepositoryId = :repository
+                order by length(p.githubWorkflowId), p.githubWorkflowId
+                """, Object[].class).setParameter("repository", githubRepositoryId).getResultStream()
+                .map(row -> new Registration((UUID) row[0], (String) row[1])).toList();
+    }
+    @Override
     public Set<String> candidateRepositoryIds(String actorRef) {
         return Set.copyOf(em.createQuery("""
                 select distinct r.githubRepositoryId from PipelineJpaEntity p, GitHubRepositoryJpaEntity r

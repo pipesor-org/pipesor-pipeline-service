@@ -12,9 +12,11 @@ import java.util.UUID;
 import org.pipesor.pipeline.catalog.application.commands.ChangePipelineAccessCommand;
 import org.pipesor.pipeline.catalog.application.queries.GetPipelineQuery;
 import org.pipesor.pipeline.catalog.application.queries.ListVisiblePipelinesQuery;
+import org.pipesor.pipeline.catalog.application.queries.ListRepositoryRegistrationsQuery;
 import org.pipesor.pipeline.catalog.application.queries.PipelineAdministrationQuery;
 import org.pipesor.pipeline.catalog.application.queries.PipelineGrantView;
 import org.pipesor.pipeline.catalog.application.queries.PipelineView;
+import org.pipesor.pipeline.catalog.application.queries.RepositoryRegistrationsView;
 import org.pipesor.pipeline.catalog.application.services.HumanPipelineAccess;
 import org.pipesor.pipeline.catalog.application.services.PipelineAdministrationQueryService;
 import org.pipesor.pipeline.catalog.application.services.PipelineConfigurationService;
@@ -83,6 +85,17 @@ public class PipelineController {
             @RequestParam(defaultValue = "0") int offset, @Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100", defaultValue = "25"))
             @RequestParam(defaultValue = "25") int limit) {
         return new PageResource<>(queries.handle(new ListVisiblePipelinesQuery(RequestContext.actor(jwt), offset, limit)), offset, limit);
+    }
+
+    @GetMapping("/registrations")
+    @Operation(summary = "Monitored workflows of a repository the caller can read on GitHub",
+            description = "ADR-028: existence only, for anyone with current GitHub read access to the admitted repository, with or "
+                    + "without a grant. accessible is true when the caller already has an effective capability on that pipeline. "
+                    + "Ordered by numeric githubWorkflowId; no paging.")
+    public RepositoryRegistrationsView registrations(
+            @Parameter(description = "Numeric GitHub repository id", required = true, schema = @Schema(pattern = "^[1-9][0-9]{0,19}$"))
+            @RequestParam String repositoryId, @AuthenticationPrincipal Jwt jwt) {
+        return queries.handle(new ListRepositoryRegistrationsQuery(RequestContext.actor(jwt), repositoryId));
     }
 
     @GetMapping("/{id}")
