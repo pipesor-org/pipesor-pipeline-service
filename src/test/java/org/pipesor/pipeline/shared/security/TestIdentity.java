@@ -57,7 +57,7 @@ public final class TestIdentity {
         String[][] trusted = {
                 {"correlation", "Correlation.OperationalReferences.Check"},
                 {"log-event", "Evidence.Check"},
-                {"recommendation", "Recommendation.DiagnosisEntitlements.Resolve"}};
+                {"recommendation", "Recommendation.DiagnosisEntitlements.Resolve,Recommendation.DiagnosisSummaries.Write"}};
         for (int index = 0; index < trusted.length; index++) {
             properties.put("pipesor.security.trusted-workloads[" + index + "].id", trusted[index][0]);
             properties.put("pipesor.security.trusted-workloads[" + index + "].jwks-uri", "http://127.0.0.1:9/" + trusted[index][0]);

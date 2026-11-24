@@ -1,5 +1,6 @@
 package org.pipesor.pipeline.incident.application.queries;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 import java.util.UUID;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.IncidentStatus;
@@ -11,7 +12,7 @@ public record IncidentView(
         UUID pipelineId,
         IncidentStatus status,
         /** Initial severity from the pipeline's criticality when opened; null when unclassified. */
-        @io.swagger.v3.oas.annotations.media.Schema(nullable = true, types = {"string", "null"}) Severity severity,
+        @Schema(nullable = true, types = {"string", "null"}) Severity severity,
         PipelineStage stage,
         String summary,
         String assigneeRef,
@@ -23,5 +24,9 @@ public record IncidentView(
         String correlationId,
         Instant createdAt,
         /** Human-friendly number shown as {@code INC-<n>}; presentation only, the UUID stays the identity. */
-        long displayNumber) {
+        long displayNumber,
+        RepositoryRef repository,
+        WorkflowRef workflow,
+        /** Null while no admitted diagnosis is projected (ADR-027). */
+        @Schema(nullable = true, types = {"object", "null"}) DiagnosisSummary diagnosis) {
 }

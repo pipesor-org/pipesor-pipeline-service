@@ -8,7 +8,10 @@ import java.util.NoSuchElementException;
 import org.pipesor.pipeline.catalog.application.services.GitHubConnectionRequired;
 import org.pipesor.pipeline.catalog.application.services.GitHubVerificationUnavailable;
 import org.pipesor.pipeline.catalog.application.services.PipelineRegistrationConflict;
+import org.pipesor.pipeline.incident.application.commands.DiagnosisSummaryScopeMismatch;
+import org.pipesor.pipeline.incident.application.queries.InvalidIncidentFilter;
 import org.pipesor.pipeline.incident.domain.model.valueobjects.InvalidIncidentTransition;
+import org.pipesor.pipeline.incident.interfaces.rest.transform.InvalidPageToken;
 import org.pipesor.pipeline.incident.interfaces.rest.DiagnosisEntitlementController;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +66,24 @@ public class ApiExceptionHandler {
     @ExceptionHandler(NoSuchElementException.class)
     ResponseEntity<ProblemDetail> missing(NoSuchElementException exception, HttpServletRequest request) {
         return problem(404, "NOT_FOUND", "Resource not found", request);
+    }
+
+    @ExceptionHandler(InvalidIncidentFilter.class)
+    ResponseEntity<ProblemDetail> invalidFilter(InvalidIncidentFilter exception, HttpServletRequest request) {
+        LOG.debug("Invalid filter: correlation={}", correlation(request));
+        return problem(400, "INVALID_FILTER", "Invalid filter value", request);
+    }
+
+    @ExceptionHandler(InvalidPageToken.class)
+    ResponseEntity<ProblemDetail> invalidPageToken(InvalidPageToken exception, HttpServletRequest request) {
+        LOG.debug("Invalid page token: correlation={}", correlation(request));
+        return problem(400, "INVALID_PAGE_TOKEN", "Page token is malformed or belongs to other filters", request);
+    }
+
+    @ExceptionHandler(DiagnosisSummaryScopeMismatch.class)
+    ResponseEntity<ProblemDetail> summaryMismatch(DiagnosisSummaryScopeMismatch exception, HttpServletRequest request) {
+        LOG.warn("Diagnosis summary does not bind to its incident: correlation={}", correlation(request));
+        return problem(409, "SCOPE_MISMATCH", "Diagnosis summary does not bind to the incident", request);
     }
 
     @ExceptionHandler({PipelineRegistrationConflict.class, InvalidIncidentTransition.class, DataIntegrityViolationException.class})

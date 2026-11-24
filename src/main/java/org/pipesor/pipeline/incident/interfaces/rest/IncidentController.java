@@ -1,8 +1,10 @@
 package org.pipesor.pipeline.incident.interfaces.rest;
 
+import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashSet;
 import java.util.NoSuchElementException;
 import java.util.UUID;
@@ -16,9 +18,14 @@ import org.pipesor.pipeline.incident.application.queries.GetIncidentQuery;
 import org.pipesor.pipeline.incident.application.queries.IncidentRunView;
 import org.pipesor.pipeline.incident.application.queries.IncidentView;
 import org.pipesor.pipeline.incident.application.queries.ListIncidentRunsQuery;
+import org.pipesor.pipeline.incident.application.queries.IncidentSummaryQuery;
 import org.pipesor.pipeline.incident.application.queries.ListIncidentQueueQuery;
 import org.pipesor.pipeline.incident.application.queries.ListIncidentsQuery;
 import org.pipesor.pipeline.incident.application.services.IncidentQueueService;
+import org.pipesor.pipeline.incident.application.services.IncidentSummaryService;
+import org.pipesor.pipeline.incident.interfaces.rest.resources.AppliedFiltersResource;
+import org.pipesor.pipeline.incident.interfaces.rest.resources.IncidentSummaryResource;
+import org.pipesor.pipeline.incident.interfaces.rest.transform.IncidentFilterParameters;
 import org.pipesor.pipeline.incident.interfaces.rest.resources.IncidentQueueResource;
 import org.pipesor.pipeline.incident.interfaces.rest.transform.IncidentQueuePageTokens;
 import org.pipesor.pipeline.incident.application.services.IncidentLifecycleService;
@@ -41,10 +48,12 @@ public class IncidentController {
     private final HumanPipelineAccess access;
     private final ExecutionQueryService executions;
     private final IncidentQueueService queue;
+    private final IncidentSummaryService summaries;
 
     public IncidentController(IncidentQueryService queries, IncidentLifecycleService commands, HumanPipelineAccess access,
-            ExecutionQueryService executions, IncidentQueueService queue) {
+            ExecutionQueryService executions, IncidentQueueService queue, IncidentSummaryService summaries) {
         this.queries = queries; this.commands = commands; this.access = access; this.executions = executions; this.queue = queue;
+        this.summaries = summaries;
     }
 
     @GetMapping("/pipelines/{id}/incidents")
@@ -56,15 +65,31 @@ public class IncidentController {
         return new PageResource<>(queries.handle(new ListIncidentsQuery(id, offset, limit)), offset, limit);
     }
 
+    /** Filter parameters are declared in the OpenAPI document by {@code OpenApiConfiguration} (ADR-027). */
     @GetMapping("/incidents")
-    public IncidentQueueResource queue(@AuthenticationPrincipal Jwt jwt,
+    @Operation(summary = "Cross-pipeline incident queue with filters",
+            description = "Filtered by VIEW grants and current GitHub access, then by the optional filters, before paging. "
+                    + "Values of one filter are OR-ed, different filters AND-ed. total counts every match the caller may view.")
+    public IncidentQueueResource queue(@AuthenticationPrincipal Jwt jwt, HttpServletRequest request,
             @Parameter(required = true) @RequestParam ListIncidentQueueQuery.State state,
             @Parameter(schema = @Schema(type = "integer", format = "int32", minimum = "1", maximum = "100", defaultValue = "24"))
             @RequestParam(defaultValue = "24") int pageSize,
-            @Parameter(description = "Opaque token from nextPageToken") @RequestParam(required = false) String pageToken) {
-        var page = queue.handle(new ListIncidentQueueQuery(RequestContext.actor(jwt), state, pageSize,
-                IncidentQueuePageTokens.decode(pageToken)));
-        return new IncidentQueueResource(page.items(), IncidentQueuePageTokens.encode(page.next()));
+            @Parameter(description = "Opaque token from nextPageToken, valid only with the same state and filters")
+            @RequestParam(required = false) String pageToken) {
+        var filter = IncidentFilterParameters.parse(state, request);
+        var page = queue.handle(new ListIncidentQueueQuery(RequestContext.actor(jwt), filter, pageSize,
+                IncidentQueuePageTokens.decode(pageToken, filter)));
+        return new IncidentQueueResource(page.items(), IncidentQueuePageTokens.encode(page.next(), filter), page.total(),
+                AppliedFiltersResource.of(filter));
+    }
+
+    @GetMapping("/incidents/summary")
+    @Operation(summary = "Counts of the filtered incident queue per severity, status and diagnosis",
+            description = "Same authorization and filters as GET /api/v1/incidents; every count map sums to total.")
+    public IncidentSummaryResource summary(@AuthenticationPrincipal Jwt jwt, HttpServletRequest request,
+            @Parameter(required = true) @RequestParam ListIncidentQueueQuery.State state) {
+        var filter = IncidentFilterParameters.parse(state, request);
+        return IncidentSummaryResource.of(summaries.handle(new IncidentSummaryQuery(RequestContext.actor(jwt), filter)), filter);
     }
 
     @GetMapping("/incidents/{id}")
